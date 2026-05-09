@@ -4,8 +4,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict
 
 import numpy as np
-import pytest
 from numpy.typing import NDArray
+import pytest
 
 from custom_components.haeo.core.adapters.elements.load import (
     LOAD_DEVICE_LOAD,
