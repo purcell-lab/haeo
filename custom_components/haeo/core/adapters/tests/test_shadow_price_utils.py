@@ -1,5 +1,6 @@
 """Tests for shadow_price_utils module."""
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -131,3 +132,60 @@ def test_per_power_basic_conversion() -> None:
     assert result.unit == "$/kW"
     assert result.values[0] == pytest.approx(0.05)
     assert result.values[1] == pytest.approx(0.40)
+
+
+_UTILS_LOGGER = "custom_components.haeo.core.adapters.shadow_price_utils"
+
+
+@pytest.fixture
+def captured_logs(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> pytest.LogCaptureFixture:
+    """Force propagation on the `custom_components.haeo` logger so caplog can see records.
+
+    The session-scoped configure_logging fixture sets propagate=False on that logger to keep
+    test output quiet, which also hides records from caplog's root-attached handler.
+    """
+    haeo_logger = logging.getLogger("custom_components.haeo")
+    monkeypatch.setattr(haeo_logger, "propagate", True)
+    caplog.set_level(logging.WARNING, logger=_UTILS_LOGGER)
+    return caplog
+
+
+def test_per_energy_misaligned_logs_warning(captured_logs: pytest.LogCaptureFixture) -> None:
+    """Misaligned shapes emit a WARNING describing the skip so operators can debug."""
+    shadow = _shadow((0.1, 0.2, 0.3, 0.4, 0.5))
+    periods = np.array([1.0, 1.0, 1.0])
+    result = shadow_price_per_energy(shadow, periods)
+    assert result is None
+    matching = [
+        r
+        for r in captured_logs.records
+        if r.name == _UTILS_LOGGER and r.levelno == logging.WARNING and "per-energy" in r.getMessage()
+    ]
+    assert matching, f"expected per-energy WARNING, got {[r.getMessage() for r in captured_logs.records]}"
+    assert "5 values" in matching[0].getMessage()
+    assert "3 periods" in matching[0].getMessage()
+
+
+def test_per_power_misaligned_logs_warning(captured_logs: pytest.LogCaptureFixture) -> None:
+    """Misaligned shapes on the inverse direction also emit a WARNING."""
+    shadow = _shadow((0.1, 0.2, 0.3, 0.4, 0.5), unit="$/kWh")
+    periods = np.array([1.0, 1.0, 1.0])
+    result = shadow_price_per_power(shadow, periods)
+    assert result is None
+    matching = [
+        r
+        for r in captured_logs.records
+        if r.name == _UTILS_LOGGER and r.levelno == logging.WARNING and "per-power" in r.getMessage()
+    ]
+    assert matching, f"expected per-power WARNING, got {[r.getMessage() for r in captured_logs.records]}"
+
+
+def test_aligned_shape_does_not_log_warning(captured_logs: pytest.LogCaptureFixture) -> None:
+    """Aligned shapes (1:1 and n_tags x n_periods) must not emit a warning."""
+    shadow_1 = _shadow((0.1, 0.2, 0.3))
+    periods = np.array([1.0, 1.0, 1.0])
+    shadow_tagged = _shadow((0.1, 0.2, 0.3, 0.4, 0.5, 0.6))
+    assert shadow_price_per_energy(shadow_1, periods) is not None
+    assert shadow_price_per_energy(shadow_tagged, periods) is not None
+    warnings_for_utils = [r for r in captured_logs.records if r.name == _UTILS_LOGGER and r.levelno >= logging.WARNING]
+    assert warnings_for_utils == []
