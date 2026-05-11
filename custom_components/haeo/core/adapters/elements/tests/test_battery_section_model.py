@@ -12,7 +12,7 @@ from custom_components.haeo.core.adapters.elements.battery_section import (
     BATTERY_SECTION_ENERGY_OUT_FLOW,
     BATTERY_SECTION_ENERGY_STORED,
     BATTERY_SECTION_POWER_ACTIVE,
-    BATTERY_SECTION_POWER_BALANCE,
+    BATTERY_SECTION_POWER_BALANCE_SHADOW_ENERGY_PRICE,
     BATTERY_SECTION_POWER_CHARGE,
     BATTERY_SECTION_POWER_DISCHARGE,
     BATTERY_SECTION_SOC_MAX,
@@ -43,6 +43,7 @@ class OutputsCase(TypedDict):
     description: str
     name: str
     model_outputs: Mapping[str, Mapping[ModelOutputName, ModelOutputValue]]
+    periods: np.ndarray
     outputs: Mapping[str, Mapping[str, OutputData]]
 
 
@@ -95,6 +96,7 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                 battery_model.BATTERY_SOC_MIN: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.006,)),
             },
         },
+        "periods": np.array([0.5]),
         "outputs": {
             BATTERY_SECTION_DEVICE: {
                 BATTERY_SECTION_POWER_CHARGE: OutputData(
@@ -107,7 +109,9 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                     type=OutputType.POWER, unit="kW", values=(-0.5,), direction=None
                 ),
                 BATTERY_SECTION_ENERGY_STORED: OutputData(type=OutputType.ENERGY, unit="kWh", values=(5.0, 5.5)),
-                BATTERY_SECTION_POWER_BALANCE: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kW", values=(0.01,)),
+                BATTERY_SECTION_POWER_BALANCE_SHADOW_ENERGY_PRICE: OutputData(
+                    type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.02,)
+                ),
                 BATTERY_SECTION_ENERGY_IN_FLOW: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.003,)),
                 BATTERY_SECTION_ENERGY_OUT_FLOW: OutputData(
                     type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.004,)
@@ -131,6 +135,7 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                 battery_model.BATTERY_ENERGY_STORED: OutputData(type=OutputType.ENERGY, unit="kWh", values=(5.0, 4.0)),
             },
         },
+        "periods": np.array([1.0]),
         "outputs": {
             BATTERY_SECTION_DEVICE: {
                 BATTERY_SECTION_POWER_CHARGE: OutputData(
@@ -161,5 +166,5 @@ def test_model_elements(case: CreateCase) -> None:
 def test_outputs_mapping(case: OutputsCase) -> None:
     """Verify adapter maps model outputs to device outputs."""
     entry = ELEMENT_TYPES[ElementType.BATTERY_SECTION]
-    result = entry.outputs(case["name"], case["model_outputs"])
+    result = entry.outputs(case["name"], case["model_outputs"], periods=case["periods"])
     assert result == case["outputs"]

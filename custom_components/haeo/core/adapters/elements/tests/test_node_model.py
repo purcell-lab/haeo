@@ -7,11 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 import pytest
 
-from custom_components.haeo.core.adapters.elements.node import (
-    NODE_DEVICE_NODE,
-    NODE_POWER_BALANCE,
-    NODE_POWER_BALANCE_ENERGY_PRICE,
-)
+from custom_components.haeo.core.adapters.elements.node import NODE_DEVICE_NODE, NODE_POWER_BALANCE_SHADOW_ENERGY_PRICE
 from custom_components.haeo.core.adapters.registry import ELEMENT_TYPES
 from custom_components.haeo.core.model import ModelOutputName, ModelOutputValue
 from custom_components.haeo.core.model.const import OutputType
@@ -67,8 +63,9 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
         "periods": np.array([1.0 / 12.0]),
         "outputs": {
             NODE_DEVICE_NODE: {
-                NODE_POWER_BALANCE: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kW", values=(0.10,)),
-                NODE_POWER_BALANCE_ENERGY_PRICE: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(1.20,)),
+                NODE_POWER_BALANCE_SHADOW_ENERGY_PRICE: OutputData(
+                    type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(1.20,)
+                ),
             }
         },
     },

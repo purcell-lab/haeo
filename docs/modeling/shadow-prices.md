@@ -42,34 +42,26 @@ This pattern—zero when slack, non-zero when binding—applies to all shadow pr
 
 ## Categories of shadow prices
 
-HAEO exposes shadow prices for various constraint types:
+All HAEO shadow-price sensors are emitted in **\$/kWh** so they sit on the same axis as tariffs and other energy-priced quantities.
+Internally the LP layer computes the raw duals in their native units (\$/kW for power-limit constraints, \$/kWh for energy-coupled constraints); the adapter publication layer converts \$/kW duals to \$/kWh by dividing by the period length before exposing them to Home Assistant.
+Individual elements document their specific shadow prices, but the interpretation is uniform: the value shows the marginal benefit of relaxing that constraint, per kWh of slack.
 
-- **Energy-coupled constraints** (reported in \$/kWh): These involve stored energy over time, such as battery state-of-charge limits or energy balance between periods.
-- **Instantaneous power constraints** (reported in \$/kW): These limit power flow at a single moment, such as inverter capacity, grid import limits, or connection ratings.
-
-Individual elements document their specific shadow prices.
-The interpretation pattern remains consistent: the value shows the marginal benefit of relaxing that particular constraint.
-
-## Per-power vs per-energy
+## How \$/kW duals are converted
 
 Shadow prices on instantaneous power constraints come from a dual variable that is dimensionally \$/kW.
 That value answers "how much would the objective improve if I could exceed the power limit by 1 kW for the duration of this period?"
-For comparison with tariffs, which are normally quoted in \$/kWh, the same dual can be re-expressed in energy units by dividing by the period length:
+For comparison with tariffs, which are normally quoted in \$/kWh, the dual is re-expressed in energy units by dividing by the period length:
 
 \$/kWh = (\$/kW) / Δt[hours]
 
 Because HAEO supports variable-width intervals, Δt is taken from `Element.periods` for that period.
-HAEO publishes both expressions so you do not have to perform the conversion in a Jinja template.
+The user only sees the \$/kWh form; the conversion is performed once per period in the adapter layer.
 
-For each power-constrained shadow price, two sensors are exposed:
-
-- The original `*_price` sensor in \$/kW
-- A sibling `*_energy_price` sensor in \$/kWh
+All published sensors use the suffix `_shadow_energy_price` and emit \$/kWh.
 
 ### Worked example
 
-For a 5-minute period (Δt = 1/12 h), a `$/kW` shadow price of `0.10` becomes a `$/kWh` value of `0.10 / (1/12) = 1.20`.
-Both sensors will be present and consistent with each other.
+For a 5-minute period (Δt = 1/12 h), a raw \$/kW dual of `0.10` becomes a `$/kWh` published value of `0.10 / (1/12) = 1.20`.
 
 ## Diagnostic visibility
 

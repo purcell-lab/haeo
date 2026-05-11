@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from custom_components.haeo.core.adapters.shadow_price_utils import shadow_price_per_energy, shadow_price_per_power
+from custom_components.haeo.core.adapters.shadow_price_utils import shadow_price_per_energy
 from custom_components.haeo.core.model.const import OutputType
 from custom_components.haeo.core.model.output_data import OutputData
 
@@ -66,19 +66,6 @@ def test_per_energy_preserves_attributes() -> None:
     assert result.type == OutputType.SHADOW_PRICE
 
 
-def test_round_trip_per_energy_then_per_power() -> None:
-    """per_energy followed by per_power recovers the original $/kW values."""
-    shadow = _shadow((0.10, 0.25, 0.50))
-    periods = np.array([1.0 / 12.0, 0.5, 1.0])
-    energy = shadow_price_per_energy(shadow, periods)
-    assert energy is not None
-    back = shadow_price_per_power(energy, periods)
-    assert back is not None
-    assert back.unit == "$/kW"
-    for original, recovered in zip(shadow.values, back.values, strict=True):
-        assert recovered == pytest.approx(original)
-
-
 def test_per_energy_tagged_shadow_is_chunked_per_period() -> None:
     """Tagged shadows (n_tags * n_periods values) divide each block by the period vector."""
     # 2 tags, 3 periods: tag-A=[0.1, 0.2, 0.3], tag-B=[0.4, 0.5, 0.6]
@@ -116,24 +103,6 @@ def test_per_energy_wrong_unit_raises() -> None:
         shadow_price_per_energy(shadow, np.array([1.0]))
 
 
-def test_per_power_wrong_unit_raises() -> None:
-    """Calling per_power on something that is already $/kW is a programmer error."""
-    shadow = _shadow((0.10,), unit="$/kW")
-    with pytest.raises(ValueError, match=r"\$/kWh"):
-        shadow_price_per_power(shadow, np.array([1.0]))
-
-
-def test_per_power_basic_conversion() -> None:
-    """A $/kWh shadow is multiplied by period length to recover $/kW."""
-    shadow = _shadow((0.10, 0.20), unit="$/kWh")
-    periods = np.array([0.5, 2.0])
-    result = shadow_price_per_power(shadow, periods)
-    assert result is not None
-    assert result.unit == "$/kW"
-    assert result.values[0] == pytest.approx(0.05)
-    assert result.values[1] == pytest.approx(0.40)
-
-
 _UTILS_LOGGER = "custom_components.haeo.core.adapters.shadow_price_utils"
 
 
@@ -164,20 +133,6 @@ def test_per_energy_misaligned_logs_warning(captured_logs: pytest.LogCaptureFixt
     assert matching, f"expected per-energy WARNING, got {[r.getMessage() for r in captured_logs.records]}"
     assert "5 values" in matching[0].getMessage()
     assert "3 periods" in matching[0].getMessage()
-
-
-def test_per_power_misaligned_logs_warning(captured_logs: pytest.LogCaptureFixture) -> None:
-    """Misaligned shapes on the inverse direction also emit a WARNING."""
-    shadow = _shadow((0.1, 0.2, 0.3, 0.4, 0.5), unit="$/kWh")
-    periods = np.array([1.0, 1.0, 1.0])
-    result = shadow_price_per_power(shadow, periods)
-    assert result is None
-    matching = [
-        r
-        for r in captured_logs.records
-        if r.name == _UTILS_LOGGER and r.levelno == logging.WARNING and "per-power" in r.getMessage()
-    ]
-    assert matching, f"expected per-power WARNING, got {[r.getMessage() for r in captured_logs.records]}"
 
 
 def test_aligned_shape_does_not_log_warning(captured_logs: pytest.LogCaptureFixture) -> None:

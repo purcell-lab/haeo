@@ -7,6 +7,7 @@ from typing import Any, Final, Literal
 import numpy as np
 
 from custom_components.haeo.core.adapters.output_utils import expect_output_data
+from custom_components.haeo.core.adapters.shadow_price_utils import shadow_price_per_energy
 from custom_components.haeo.core.const import ConnectivityLevel
 from custom_components.haeo.core.model import ModelElementConfig, ModelOutputName, ModelOutputValue
 from custom_components.haeo.core.model import battery as model_battery
@@ -56,7 +57,7 @@ type BatteryOutputName = Literal[
     "battery_power_active",
     "battery_energy_stored",
     "battery_state_of_charge",
-    "battery_power_balance",
+    "battery_power_balance_shadow_energy_price",
     "battery_energy_in_flow",
     "battery_energy_out_flow",
     "battery_soc_max",
@@ -70,7 +71,8 @@ BATTERY_OUTPUT_NAMES: Final[frozenset[BatteryOutputName]] = frozenset(
         BATTERY_POWER_ACTIVE := "battery_power_active",
         BATTERY_ENERGY_STORED := "battery_energy_stored",
         BATTERY_STATE_OF_CHARGE := "battery_state_of_charge",
-        BATTERY_POWER_BALANCE := "battery_power_balance",
+        # Per-energy ($/kWh) shadow price on the power-balance constraint
+        BATTERY_POWER_BALANCE_SHADOW_ENERGY_PRICE := "battery_power_balance_shadow_energy_price",
         BATTERY_ENERGY_IN_FLOW := "battery_energy_in_flow",
         BATTERY_ENERGY_OUT_FLOW := "battery_energy_out_flow",
         BATTERY_SOC_MAX := "battery_soc_max",
@@ -215,6 +217,8 @@ class BatteryAdapter:
         name: str,
         model_outputs: Mapping[str, Mapping[ModelOutputName, ModelOutputValue]],
         config: BatteryConfigData,
+        *,
+        periods: np.ndarray,
         **_kwargs: Any,
     ) -> Mapping[BatteryDeviceName, Mapping[BatteryOutputName, OutputData]]:
         """Map model outputs to battery-specific output names."""
@@ -246,7 +250,10 @@ class BatteryAdapter:
             type=OutputType.POWER,
         )
 
-        aggregate_outputs[BATTERY_POWER_BALANCE] = battery_outputs[model_battery.BATTERY_POWER_BALANCE]
+        if (power_balance_shadow := battery_outputs.get(model_battery.BATTERY_POWER_BALANCE)) is not None and (
+            energy_shadow := shadow_price_per_energy(power_balance_shadow, periods)
+        ) is not None:
+            aggregate_outputs[BATTERY_POWER_BALANCE_SHADOW_ENERGY_PRICE] = energy_shadow
         aggregate_outputs[BATTERY_ENERGY_IN_FLOW] = replace(
             battery_outputs[model_battery.BATTERY_ENERGY_IN_FLOW], advanced=True
         )

@@ -29,16 +29,14 @@ from custom_components.haeo.core.schema.sections import (
 # Load output names
 type LoadOutputName = Literal[
     "load_power",
-    "load_forecast_limit_price",
-    "load_forecast_limit_energy_price",
+    "load_forecast_limit_shadow_energy_price",
 ]
 
 LOAD_OUTPUT_NAMES: Final[frozenset[LoadOutputName]] = frozenset(
     (
         LOAD_POWER := "load_power",
-        # Shadow prices
-        LOAD_FORECAST_LIMIT_PRICE := "load_forecast_limit_price",
-        LOAD_FORECAST_LIMIT_ENERGY_PRICE := "load_forecast_limit_energy_price",
+        # Per-energy shadow price ($/kWh) on the forecast-limit constraint
+        LOAD_FORECAST_LIMIT_SHADOW_ENERGY_PRICE := "load_forecast_limit_shadow_energy_price",
     )
 )
 
@@ -101,15 +99,14 @@ class LoadAdapter:
             LOAD_POWER: replace(power, type=OutputType.POWER, direction="-", fixed=fixed),
         }
 
-        # Shadow price from power_limit segment (if present)
+        # Per-energy ($/kWh) shadow price from the forecast-limit constraint
         if (
             isinstance(segments_output := connection.get(CONNECTION_SEGMENTS), Mapping)
             and isinstance(power_limit_outputs := segments_output.get("power_limit"), Mapping)
             and (shadow := expect_output_data(power_limit_outputs.get("power_limit"))) is not None
+            and (energy_shadow := shadow_price_per_energy(shadow, periods)) is not None
         ):
-            load_outputs[LOAD_FORECAST_LIMIT_PRICE] = shadow
-            if (energy_shadow := shadow_price_per_energy(shadow, periods)) is not None:
-                load_outputs[LOAD_FORECAST_LIMIT_ENERGY_PRICE] = energy_shadow
+            load_outputs[LOAD_FORECAST_LIMIT_SHADOW_ENERGY_PRICE] = energy_shadow
 
         return {LOAD_DEVICE_LOAD: load_outputs}
 

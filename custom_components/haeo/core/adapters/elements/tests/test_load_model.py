@@ -9,8 +9,7 @@ import pytest
 
 from custom_components.haeo.core.adapters.elements.load import (
     LOAD_DEVICE_LOAD,
-    LOAD_FORECAST_LIMIT_ENERGY_PRICE,
-    LOAD_FORECAST_LIMIT_PRICE,
+    LOAD_FORECAST_LIMIT_SHADOW_ENERGY_PRICE,
     LOAD_POWER,
 )
 from custom_components.haeo.core.adapters.elements.tests.normalize import normalize_for_compare
@@ -129,8 +128,7 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
         "outputs": {
             LOAD_DEVICE_LOAD: {
                 LOAD_POWER: OutputData(type=OutputType.POWER, unit="kW", values=(1.0,), direction="-", fixed=True),
-                LOAD_FORECAST_LIMIT_PRICE: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kW", values=(0.01,)),
-                LOAD_FORECAST_LIMIT_ENERGY_PRICE: OutputData(
+                LOAD_FORECAST_LIMIT_SHADOW_ENERGY_PRICE: OutputData(
                     type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.04,)
                 ),
             }

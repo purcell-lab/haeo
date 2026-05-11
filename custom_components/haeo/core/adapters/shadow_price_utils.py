@@ -29,21 +29,19 @@ def _aligned_periods(n_values: int, periods: NDArray[np.floating[Any]]) -> tuple
     return None
 
 
-def _log_misaligned(direction: str, shadow: OutputData, periods: NDArray[np.floating[Any]]) -> None:
+def _log_misaligned(shadow: OutputData, periods: NDArray[np.floating[Any]]) -> None:
     """Log a warning when a shadow price cannot be aligned with the period vector.
 
     The skipped sibling sensor is the consequence; this gives operators a clear breadcrumb
     rather than silently dropping the conversion.
     """
     _LOGGER.warning(
-        "Skipping %s shadow-price conversion: %d values cannot be aligned with %d periods "
-        "(unit=%s, type=%s); %s sensor will be unavailable for this interval",
-        direction,
+        "Skipping per-energy shadow-price conversion: %d values cannot be aligned with %d periods "
+        "(unit=%s, type=%s); $/kWh sensor will be unavailable for this interval",
         len(shadow.values),
         len(periods),
         shadow.unit,
         getattr(shadow.type, "name", shadow.type),
-        "$/kWh" if direction == "per-energy" else "$/kW",
     )
 
 
@@ -59,24 +57,7 @@ def shadow_price_per_energy(shadow: OutputData, periods: NDArray[np.floating[Any
         raise ValueError(msg)
     aligned = _aligned_periods(len(shadow.values), periods)
     if aligned is None:
-        _log_misaligned("per-energy", shadow, periods)
+        _log_misaligned(shadow, periods)
         return None
     values = tuple(float(v) / p if p else 0.0 for v, p in zip(shadow.values, aligned, strict=True))
     return replace(shadow, unit="$/kWh", values=values)
-
-
-def shadow_price_per_power(shadow: OutputData, periods: NDArray[np.floating[Any]]) -> OutputData | None:
-    """Convert a $/kWh shadow price into $/kW by multiplying by period length (h).
-
-    Returns None when the shadow's value count cannot be aligned with periods. A warning is
-    logged on misalignment so operators can diagnose missing sibling sensors.
-    """
-    if shadow.unit != "$/kWh":
-        msg = f"shadow_price_per_power expects $/kWh, got {shadow.unit!r}"
-        raise ValueError(msg)
-    aligned = _aligned_periods(len(shadow.values), periods)
-    if aligned is None:
-        _log_misaligned("per-power", shadow, periods)
-        return None
-    values = tuple(float(v) * p for v, p in zip(shadow.values, aligned, strict=True))
-    return replace(shadow, unit="$/kW", values=values)

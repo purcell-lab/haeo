@@ -28,16 +28,14 @@ from custom_components.haeo.core.schema.sections import CONF_CONNECTION, CONF_FO
 # Solar output names
 type SolarOutputName = Literal[
     "solar_power",
-    "solar_forecast_limit",
-    "solar_forecast_limit_energy_price",
+    "solar_forecast_limit_shadow_energy_price",
 ]
 
 SOLAR_OUTPUT_NAMES: Final[frozenset[SolarOutputName]] = frozenset(
     (
         SOLAR_POWER := "solar_power",
-        # Shadow prices
-        SOLAR_FORECAST_LIMIT := "solar_forecast_limit",
-        SOLAR_FORECAST_LIMIT_ENERGY_PRICE := "solar_forecast_limit_energy_price",
+        # Per-energy ($/kWh) shadow price on the forecast-limit constraint
+        SOLAR_FORECAST_LIMIT_SHADOW_ENERGY_PRICE := "solar_forecast_limit_shadow_energy_price",
     )
 )
 
@@ -99,15 +97,14 @@ class SolarAdapter:
             SOLAR_POWER: replace(power, type=OutputType.POWER, fixed=fixed),
         }
 
-        # Shadow price from power_limit segment (if present)
+        # Per-energy ($/kWh) shadow price from the forecast-limit constraint (if present)
         if (
             isinstance(segments_output := connection.get(CONNECTION_SEGMENTS), Mapping)
             and isinstance(power_limit_outputs := segments_output.get("power_limit"), Mapping)
             and (shadow := expect_output_data(power_limit_outputs.get("power_limit"))) is not None
+            and (energy_shadow := shadow_price_per_energy(shadow, periods)) is not None
         ):
-            solar_outputs[SOLAR_FORECAST_LIMIT] = shadow
-            if (energy_shadow := shadow_price_per_energy(shadow, periods)) is not None:
-                solar_outputs[SOLAR_FORECAST_LIMIT_ENERGY_PRICE] = energy_shadow
+            solar_outputs[SOLAR_FORECAST_LIMIT_SHADOW_ENERGY_PRICE] = energy_shadow
 
         return {SOLAR_DEVICE_SOLAR: solar_outputs}
 

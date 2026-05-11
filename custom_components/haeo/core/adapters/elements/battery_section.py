@@ -4,7 +4,11 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, Final, Literal
 
+import numpy as np
+from numpy.typing import NDArray
+
 from custom_components.haeo.core.adapters.output_utils import expect_output_data
+from custom_components.haeo.core.adapters.shadow_price_utils import shadow_price_per_energy
 from custom_components.haeo.core.const import ConnectivityLevel
 from custom_components.haeo.core.model import ModelElementConfig, ModelOutputName, ModelOutputValue
 from custom_components.haeo.core.model import battery as model_battery
@@ -25,7 +29,7 @@ type BatterySectionOutputName = Literal[
     "battery_section_power_discharge",
     "battery_section_power_active",
     "battery_section_energy_stored",
-    "battery_section_power_balance",
+    "battery_section_power_balance_shadow_energy_price",
     "battery_section_energy_in_flow",
     "battery_section_energy_out_flow",
     "battery_section_soc_max",
@@ -38,7 +42,8 @@ BATTERY_SECTION_OUTPUT_NAMES: Final[frozenset[BatterySectionOutputName]] = froze
         BATTERY_SECTION_POWER_DISCHARGE := "battery_section_power_discharge",
         BATTERY_SECTION_POWER_ACTIVE := "battery_section_power_active",
         BATTERY_SECTION_ENERGY_STORED := "battery_section_energy_stored",
-        BATTERY_SECTION_POWER_BALANCE := "battery_section_power_balance",
+        # Per-energy ($/kWh) shadow price on the power-balance constraint
+        BATTERY_SECTION_POWER_BALANCE_SHADOW_ENERGY_PRICE := "battery_section_power_balance_shadow_energy_price",
         BATTERY_SECTION_ENERGY_IN_FLOW := "battery_section_energy_in_flow",
         BATTERY_SECTION_ENERGY_OUT_FLOW := "battery_section_energy_out_flow",
         BATTERY_SECTION_SOC_MAX := "battery_section_soc_max",
@@ -80,6 +85,8 @@ class BatterySectionAdapter:
         self,
         name: str,
         model_outputs: Mapping[str, Mapping[ModelOutputName, ModelOutputValue]],
+        *,
+        periods: NDArray[np.floating[Any]],
         **_kwargs: Any,
     ) -> Mapping[BatterySectionDeviceName, Mapping[BatterySectionOutputName, OutputData]]:
         """Map model outputs to battery section output names."""
@@ -109,8 +116,10 @@ class BatterySectionAdapter:
         section_outputs[BATTERY_SECTION_ENERGY_STORED] = battery_data[model_battery.BATTERY_ENERGY_STORED]
 
         # Shadow prices
-        if model_battery.BATTERY_POWER_BALANCE in battery_data:
-            section_outputs[BATTERY_SECTION_POWER_BALANCE] = battery_data[model_battery.BATTERY_POWER_BALANCE]
+        if (power_balance_shadow := battery_data.get(model_battery.BATTERY_POWER_BALANCE)) is not None and (
+            energy_shadow := shadow_price_per_energy(power_balance_shadow, periods)
+        ) is not None:
+            section_outputs[BATTERY_SECTION_POWER_BALANCE_SHADOW_ENERGY_PRICE] = energy_shadow
         if model_battery.BATTERY_ENERGY_IN_FLOW in battery_data:
             section_outputs[BATTERY_SECTION_ENERGY_IN_FLOW] = battery_data[model_battery.BATTERY_ENERGY_IN_FLOW]
         if model_battery.BATTERY_ENERGY_OUT_FLOW in battery_data:
