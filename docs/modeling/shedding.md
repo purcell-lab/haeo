@@ -63,3 +63,23 @@ A threshold price of \$0 (the default after migration) is equivalent to no thres
 The threshold can be configured as a constant (e.g. \$0.30/kWh) or bound to an entity that supplies a time-varying price (e.g. a tariff sensor or a forecast).
 It is **not** the same as the energy tariff itself — it is the user's willingness to pay for *this load* at *this time*.
 A higher threshold makes the load more important and less likely to shed; a lower threshold makes it more discretionary.
+
+## Forecast statistics sensors
+
+Every Load element also exposes cumulative and rolling-24h statistics derived from the LP solution, so a dashboard can show "what this load will consume and cost over the optimization horizon" without any template plumbing:
+
+| Sensor               | Window       | What it answers                                                                        |
+| -------------------- | ------------ | -------------------------------------------------------------------------------------- |
+| `total_energy`       | full horizon | Forecast energy (kWh) the load will be served                                          |
+| `total_cost`         | full horizon | Marginal cost (\$) the load contributes against the source-node dual                   |
+| `total_runtime`      | full horizon | Hours the load is dispatched (power > 0) within the horizon                            |
+| `total_average_cost` | full horizon | Energy-weighted average \$/kWh paid for the load (`total_cost / total_energy`)         |
+| `daily_energy`       | next 24h     | Same as above but restricted to the first 24h of the horizon (rolling window from now) |
+| `daily_cost`         | next 24h     | "                                                                                      |
+| `daily_runtime`      | next 24h     | "                                                                                      |
+| `daily_average_cost` | next 24h     | "                                                                                      |
+
+The cost integral is `Σ p_load[t] × node_dual[t]`, where `node_dual[t]` is the **source-node power-balance shadow price** already period-integrated by the LP objective.
+This stays correct whether the load is dispatched, shed, or partially served: in shed periods `p_load[t] = 0`, contributing zero, and in served periods the dual reflects the true marginal cost (which can be the grid tariff, a battery's discharge cost, or solar curtailment value, depending on which source is on the margin).
+
+`average_cost` falls back to \$0/kWh whenever `total_energy` is zero, so a fully-shed load reports zeros across the board rather than a divide-by-zero error.

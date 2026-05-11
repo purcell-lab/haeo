@@ -50,12 +50,20 @@ The adapter transforms user configuration into connection segments:
 
 ### Load Device
 
-| Sensor                 | Unit   | Update    | Description                                                               |
-| ---------------------- | ------ | --------- | ------------------------------------------------------------------------- |
-| `power`                | kW     | Real-time | Power consumed by load                                                    |
-| `power_possible`       | kW     | Real-time | Maximum possible load (forecast)                                          |
-| `forecast_limit_price` | \$/kWh | Real-time | Marginal cost of serving this load                                        |
-| `threshold_price`      | \$/kWh | Real-time | Configured willingness-to-pay ceiling (sheddable loads only, default \$0) |
+| Sensor                 | Unit   | Update    | Description                                                                                                            |
+| ---------------------- | ------ | --------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `power`                | kW     | Real-time | Power consumed by load                                                                                                 |
+| `power_possible`       | kW     | Real-time | Maximum possible load (forecast)                                                                                       |
+| `forecast_limit_price` | \$/kWh | Real-time | Marginal cost of serving this load                                                                                     |
+| `threshold_price`      | \$/kWh | Real-time | Configured willingness-to-pay ceiling (sheddable loads only, default \$0)                                              |
+| `total_energy`         | kWh    | Per solve | Cumulative energy consumed over the optimization horizon                                                               |
+| `total_cost`           | \$     | Per solve | Cumulative marginal cost over the horizon (`Σ p_load[t] × node_dual[t]`)                                               |
+| `total_runtime`        | h      | Per solve | Cumulative time the load is dispatched (power > 0) over the horizon                                                    |
+| `total_average_cost`   | \$/kWh | Per solve | Energy-weighted average cost of served load over the horizon (`total_cost / total_energy`; 0 when no energy is served) |
+| `daily_energy`         | kWh    | Per solve | Energy forecast to be consumed over the next 24h, starting at the horizon start                                        |
+| `daily_cost`           | \$     | Per solve | Marginal cost forecast over the next 24h, starting at the horizon start                                                |
+| `daily_runtime`        | h      | Per solve | Time the load is forecast to be dispatched over the next 24h                                                           |
+| `daily_average_cost`   | \$/kWh | Per solve | Energy-weighted average cost forecast for the next 24h (0 when no energy is served)                                    |
 
 See [Load Configuration](../../user-guide/elements/load.md) for detailed sensor and configuration documentation.
 
