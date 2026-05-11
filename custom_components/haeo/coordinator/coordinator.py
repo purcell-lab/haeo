@@ -188,7 +188,9 @@ def _build_coordinator_output(
     """
 
     values = tuple(output_data.values)
-    if not values:
+    if output_data.state is not None:
+        state = output_data.state
+    elif not values:
         state = None
     elif output_data.state_last:
         state = values[-1]

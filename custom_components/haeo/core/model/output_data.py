@@ -24,6 +24,11 @@ class OutputData:
         advanced: Whether the output is intended for advanced diagnostics only.
         state_last: If True, the sensor state uses the last value instead of the first.
             Use for cumulative values where the total is the meaningful current state.
+        state: Optional scalar that overrides the sensor state (taking precedence over
+            ``state_last`` / ``values[0]``). Use when the per-interval ``values``
+            sequence should drive the forecast attribute but a separately computed
+            scalar (e.g. a clipped 24h total or a running total) is the meaningful
+            state.
         priority: Connection time-preference priority. Lower values are preferred
             earlier by the secondary objective. None for non-connection outputs.
         fixed: Whether the output is constrained to equal its forecast (no curtailment).
@@ -36,6 +41,7 @@ class OutputData:
     direction: Literal["+", "-"] | None = None
     advanced: bool = False
     state_last: bool = False
+    state: Any | None = None
     priority: int | None = None
     fixed: bool = False
 
@@ -48,6 +54,7 @@ class OutputData:
         *,
         advanced: bool = False,
         state_last: bool = False,
+        state: Any | None = None,
         priority: int | None = None,
         fixed: bool = False,
     ) -> None:
@@ -60,6 +67,9 @@ class OutputData:
             direction: Power flow direction relative to the element.
             advanced: Whether the output is intended for advanced diagnostics only.
             state_last: If True, the sensor state uses the last value instead of the first.
+            state: Optional scalar that overrides the sensor state. When provided,
+                takes precedence over ``state_last`` so the forecast and state can
+                report different views of the same series.
             priority: The connection priority for this output, if applicable.
             fixed: Whether the output is constrained to equal its forecast (no curtailment).
 
@@ -69,6 +79,7 @@ class OutputData:
         self.direction = direction
         self.advanced = advanced
         self.state_last = state_last
+        self.state = state
         self.priority = priority
         self.fixed = fixed
 
