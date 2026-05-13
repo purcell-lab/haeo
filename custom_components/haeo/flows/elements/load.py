@@ -13,6 +13,7 @@ from custom_components.haeo.core.schema.sections import (
     CONF_CONNECTION,
     CONF_CURTAILMENT,
     CONF_FORECAST,
+    CONF_THRESHOLD_PRICE,
     SECTION_CURTAILMENT,
 )
 from custom_components.haeo.elements import get_input_field_schema_info, get_input_fields
@@ -27,7 +28,7 @@ from custom_components.haeo.flows.field_schema import (
     preprocess_sectioned_choose_input,
     validate_sectioned_choose_fields,
 )
-from custom_components.haeo.sections import build_common_fields, forecast_section
+from custom_components.haeo.sections import build_common_fields, forecast_section, threshold_section
 
 
 class LoadSubentryFlowHandler(ElementFlowMixin, ConfigSubentryFlow):
@@ -38,6 +39,7 @@ class LoadSubentryFlowHandler(ElementFlowMixin, ConfigSubentryFlow):
         return (
             forecast_section((CONF_FORECAST,), collapsed=False),
             SectionDefinition(key=SECTION_CURTAILMENT, fields=(CONF_CURTAILMENT,), collapsed=True),
+            threshold_section((CONF_THRESHOLD_PRICE,), collapsed=True),
         )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
