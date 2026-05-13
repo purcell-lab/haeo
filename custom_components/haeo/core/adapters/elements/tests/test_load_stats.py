@@ -269,6 +269,86 @@ def test_stats_omitted_when_source_node_has_no_dual() -> None:
         assert missing not in load_outputs
 
 
+def test_stats_emitted_when_source_dual_is_multiple_of_n_periods() -> None:
+    """Tagged nodes emit a dual array of length k * n_periods; stats average across the k blocks.
+
+    This is the production failure mode behind purcell-lab v0.4.0rc5.post7 issue: when a load is
+    connected through a node that participates in policy-based tagged routing, the source-node
+    ``element_power_balance`` returns one block of per-period duals per tag. The strict
+    ``len == n_periods`` guard previously dropped every stats sensor for those loads.
+    """
+    adapter = LoadAdapter()
+    n = 4
+    power = (1.0, 2.0, 0.0, 4.0)
+    periods = (1.0, 1.0, 1.0, 1.0)
+    # Two blocks: block A (production decomp) + block B (per-tag balance). Average is the
+    # marginal value of energy at the node.
+    dual = (0.10, 0.20, 0.30, 0.40, 0.30, 0.40, 0.50, 0.60)
+    expected_dual_per_period = (0.20, 0.30, 0.40, 0.50)
+
+    result = adapter.outputs(
+        "load",
+        _outputs_with_dual(power=power, dual=dual, periods=periods),
+        config=_config(n=n),
+        periods=np.array(periods),
+    )
+    load_outputs = result[LOAD_DEVICE_LOAD]
+
+    # Cost per step uses the averaged per-period dual.
+    expected_cost_per_step = tuple(
+        p * d * dt for p, d, dt in zip(power, expected_dual_per_period, periods, strict=True)
+    )
+    expected_cum_cost = tuple(sum(expected_cost_per_step[: i + 1]) for i in range(n))
+    assert tuple(load_outputs[LOAD_TOTAL_COST].values) == pytest.approx(expected_cum_cost)
+
+
+def test_stats_emitted_when_source_dual_has_trailing_aggregate_constraints() -> None:
+    """Tagged nodes can also emit a small tail of extra constraints (e.g. tag-blocking aggregates).
+
+    The dual array is then ``n_periods + r`` long with ``r < n_periods``. The adapter uses the
+    leading per-period block. This guards purcell-lab v0.4.0rc5.post7's real-world failure where
+    a node with 192 forecast intervals returned a 193-element dual.
+    """
+    adapter = LoadAdapter()
+    n = 4
+    power = (1.0, 2.0, 0.0, 4.0)
+    periods = (1.0, 1.0, 1.0, 1.0)
+    leading = (0.10, 0.20, 0.30, 0.40)
+    # One trailing aggregate constraint (e.g. a scalar tag-blocking balance).
+    dual = (*leading, 0.99)
+
+    result = adapter.outputs(
+        "load",
+        _outputs_with_dual(power=power, dual=dual, periods=periods),
+        config=_config(n=n),
+        periods=np.array(periods),
+    )
+    load_outputs = result[LOAD_DEVICE_LOAD]
+
+    expected_cost_per_step = tuple(p * d * dt for p, d, dt in zip(power, leading, periods, strict=True))
+    expected_cum_cost = tuple(sum(expected_cost_per_step[: i + 1]) for i in range(n))
+    assert tuple(load_outputs[LOAD_TOTAL_COST].values) == pytest.approx(expected_cum_cost)
+
+
+def test_stats_omitted_when_source_dual_is_shorter_than_n_periods() -> None:
+    """A dual shorter than n_periods is treated as unusable and stats are omitted."""
+    adapter = LoadAdapter()
+    n = 4
+    power = (1.0, 2.0, 0.0, 4.0)
+    periods = (1.0, 1.0, 1.0, 1.0)
+    dual = (0.10, 0.20)  # too short
+
+    result = adapter.outputs(
+        "load",
+        _outputs_with_dual(power=power, dual=dual, periods=periods),
+        config=_config(n=n),
+        periods=np.array(periods),
+    )
+    load_outputs = result[LOAD_DEVICE_LOAD]
+    assert LOAD_TOTAL_COST not in load_outputs
+    assert LOAD_TOTAL_ENERGY not in load_outputs
+
+
 def test_fixed_load_also_emits_stats_when_source_dual_is_present() -> None:
     """Stats sensors are emitted for fixed loads too (cost is well-defined either way)."""
     adapter = LoadAdapter()

@@ -203,6 +203,20 @@ def _node_dual_values(
     energy units ($/kWh) by the energy-native LP formulation, so a
     per-timestep cost in dollars is ``power * dual * dt``.
 
+    Handles several shapes returned by ``element_power_balance``:
+      * ``n_periods``                — simple untagged balance.
+      * ``k * n_periods`` (k >= 2)   — tagged nodes emit one block per
+        production/consumption decomposition plus per-tag balances. The
+        marginal value of energy at the node is the same across blocks for
+        the unblocked tag set, so we average across the blocks to get a
+        single representative $/kWh per period.
+      * ``n_periods + r`` (r < n_periods) — tagged nodes can also emit a
+        small number of additional scalar/aggregate constraints
+        (e.g. tag-blocking constraints from non-routing connections). We
+        take the first ``n_periods`` values, which correspond to the
+        primary per-period balance.
+      * other shapes                  — return None (stats sensors omitted).
+
     Returns None when the source node has no ``element_power_balance`` output
     (e.g. unconstrained pass-through nodes) so that stats sensors are simply
     omitted rather than reporting zero.
@@ -214,9 +228,20 @@ def _node_dual_values(
     if dual is None:
         return None
     values = tuple(float(v) for v in dual.values)
-    if len(values) != n_periods:
+    n_values = len(values)
+    if n_values == 0 or n_periods == 0:
         return None
-    return values
+    if n_values == n_periods:
+        return values
+    if n_values >= n_periods and n_values % n_periods == 0:
+        # Tagged-node shape: k blocks of n_periods values. Average per period.
+        k = n_values // n_periods
+        return tuple(sum(values[i * n_periods + t] for i in range(k)) / k for t in range(n_periods))
+    if n_values > n_periods:
+        # Mixed shape: primary per-period balance followed by a tail of
+        # aggregate constraints. Use the leading per-period block.
+        return values[:n_periods]
+    return None
 
 
 def _stats_outputs(
