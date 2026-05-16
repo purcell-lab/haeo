@@ -356,6 +356,20 @@ class PolicySubentryFlowHandler(ElementFlowMixin, ConfigSubentryFlow):
             errors["base"] = "source_target_same"
             return False
 
+        # Block duplicate source/target patterns
+        source_list = sorted(source) if isinstance(source, list) and source else None
+        target_list = sorted(target) if isinstance(target, list) and target else None
+        for i, rule in enumerate(self._rules):
+            if i == exclude_index:
+                continue
+            rule_source = rule.get(CONF_SOURCE)
+            rule_target = rule.get(CONF_TARGET)
+            existing_source = sorted(rule_source) if rule_source else None
+            existing_target = sorted(rule_target) if rule_target else None
+            if source_list == existing_source and target_list == existing_target:
+                errors["base"] = "duplicate_rule"
+                return False
+
         price = user_input.get(CONF_PRICE)
         if isinstance(price, str) and price == "":
             errors[CONF_PRICE] = "required"

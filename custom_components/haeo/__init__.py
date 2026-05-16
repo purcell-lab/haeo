@@ -28,8 +28,10 @@ from custom_components.haeo.const import (
 )
 from custom_components.haeo.coordinator import HaeoDataUpdateCoordinator
 from custom_components.haeo.core.const import CONF_ADVANCED_MODE, CONF_ELEMENT_TYPE, CONF_NAME
+from custom_components.haeo.core.schema.elements.policy import PolicyRuleConfig
 from custom_components.haeo.elements import ELEMENT_DEVICE_NAMES_BY_TYPE
 from custom_components.haeo.flows import HUB_SECTION_ADVANCED
+from custom_components.haeo.flows.surfaced_policy import find_policy_subentry, get_policy_rules
 from custom_components.haeo.horizon import HorizonManager
 from custom_components.haeo.services import async_setup_services
 
@@ -243,8 +245,79 @@ async def async_update_listener(hass: HomeAssistant, entry: HaeoConfigEntry) -> 
             coordinator.signal_optimization_stale()
         return
 
+    # Clean up policy rules that reference deleted elements
+    _cleanup_policy_rules(hass, entry)
+
     _LOGGER.info("HAEO configuration changed, reloading integration")
     hass.config_entries.async_schedule_reload(entry.entry_id)
+
+
+def _cleanup_policy_rules(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove deleted element references from policy rules.
+
+    When an element subentry is deleted, policy rules may still reference
+    it by name. This strips deleted names from source/target lists,
+    removes rules where either side had elements but became empty, and
+    deduplicates rules that end up with the same source/target pattern.
+    """
+    from custom_components.haeo.flows.surfaced_policy import _save_policy_rules  # noqa: PLC0415
+
+    policy_subentry = find_policy_subentry(entry)
+    if policy_subentry is None:
+        return
+
+    current_element_names = {
+        subentry.title for subentry in entry.subentries.values() if subentry.subentry_id != policy_subentry.subentry_id
+    }
+
+    rules = get_policy_rules(entry)
+    cleaned: list[PolicyRuleConfig] = []
+    seen_patterns: set[tuple[tuple[str, ...] | None, tuple[str, ...] | None]] = set()
+    changed = False
+
+    for rule in rules:
+        source = rule.get("source")
+        target = rule.get("target")
+
+        new_source = [name for name in source if name in current_element_names] if source else source
+        new_target = [name for name in target if name in current_element_names] if target else target
+
+        if new_source != source or new_target != target:
+            changed = True
+
+        # Drop rules where a named side lost all its elements
+        source_emptied = source and not new_source
+        target_emptied = target and not new_target
+        if source_emptied or target_emptied:
+            changed = True
+            continue
+
+        new_rule: PolicyRuleConfig = dict(rule)  # type: ignore[assignment]
+        if new_source != source:
+            if new_source:
+                new_rule["source"] = new_source
+            else:
+                new_rule.pop("source", None)
+        if new_target != target:
+            if new_target:
+                new_rule["target"] = new_target
+            else:
+                new_rule.pop("target", None)
+
+        # Deduplicate rules with the same source/target pattern
+        pattern = (
+            tuple(sorted(new_source)) if new_source else None,
+            tuple(sorted(new_target)) if new_target else None,
+        )
+        if pattern in seen_patterns:
+            changed = True
+            continue
+        seen_patterns.add(pattern)
+
+        cleaned.append(new_rule)
+
+    if changed:
+        _save_policy_rules(hass, entry, cleaned)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HaeoConfigEntry) -> bool:
