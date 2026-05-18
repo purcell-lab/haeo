@@ -79,10 +79,23 @@ def _make_load_config(threshold_price: float | None = _THRESHOLD_PRICE) -> LoadC
     return config
 
 
-def _solve_network(grid_config: GridConfigData, load_config: LoadConfigData) -> Network:
+def _solve_network(
+    grid_config: GridConfigData,
+    load_config: LoadConfigData,
+    *,
+    bus_is_source: bool = False,
+    bus_is_sink: bool = False,
+) -> Network:
     net = Network(name="stats-lp-test", periods=_PERIODS_HOURS)
     participants = {"grid": grid_config, "load": load_config}
-    net.add({"element_type": "node", "name": "main_bus", "is_source": False, "is_sink": False})
+    net.add(
+        {
+            "element_type": "node",
+            "name": "main_bus",
+            "is_source": bus_is_source,
+            "is_sink": bus_is_sink,
+        }
+    )
     sorted_model_elements = list(collect_model_elements(participants))  # type: ignore[arg-type]
     # Compile policies (empty rule list) so connections receive default tags.
     result = compile_policies(sorted_model_elements, [])
@@ -169,6 +182,35 @@ def test_daily_sensors_match_totals_when_horizon_is_under_24h() -> None:
     assert next(iter(outputs[LOAD_DAILY_AVERAGE_COST].values)) == pytest.approx(
         tuple(outputs[LOAD_TOTAL_AVERAGE_COST].values)[-1], abs=1e-6
     )
+
+
+def test_stats_outputs_present_when_bus_is_source_and_sink() -> None:
+    """Regression: when the source node is is_source=is_sink=True (HA default for a
+    switchboard), ``element_power_balance`` returns a multi-block dual vector after
+    PR #426. The adapter must still surface the 8 stats sensors (energy/cost/runtime
+    /average cost, total + daily), not silently drop them on length mismatch.
+    """
+    net = _solve_network(_make_grid_config(), _make_load_config(), bus_is_source=True, bus_is_sink=True)
+    adapter = LoadAdapter()
+
+    outputs = adapter.outputs(
+        "load",
+        _model_outputs(net),
+        config=_make_load_config(),
+        periods=_PERIODS_HOURS,
+    )[LOAD_DEVICE_LOAD]
+
+    for sensor in (
+        LOAD_TOTAL_ENERGY,
+        LOAD_TOTAL_COST,
+        LOAD_TOTAL_RUNTIME,
+        LOAD_TOTAL_AVERAGE_COST,
+        LOAD_DAILY_ENERGY,
+        LOAD_DAILY_COST,
+        LOAD_DAILY_RUNTIME,
+        LOAD_DAILY_AVERAGE_COST,
+    ):
+        assert sensor in outputs, f"{sensor} missing from load outputs for source+sink bus"
 
 
 def test_zero_dispatch_produces_zero_stats_and_zero_average_cost() -> None:

@@ -213,9 +213,28 @@ def _node_dual_values(
     if dual is None:
         return None
     values = tuple(float(v) for v in dual.values)
-    if len(values) != n_periods:
+    # Since PR #426 (DEFAULT_TAG removal), element_power_balance is built from a
+    # flat list of per-period constraints. For a source+sink node with tags the
+    # layout is: [optional production-decomp block, optional consumption-decomp
+    # block, then one block per tag of per-tag balance]. Each block is
+    # n_periods long. For pricing we want the per-tag balance duals only;
+    # summing them across tags recovers the previous single $/kWh series.
+    if len(values) == n_periods:
+        return values
+    if len(values) == 0 or len(values) % n_periods != 0:
         return None
-    return values
+    # Take the trailing tag-balance blocks; the actual count is
+    # connection_tags() but we don't have access here. Empirically the LAST
+    # block is always a balance dual, and summing the trailing blocks matches
+    # the prior behaviour when only one block existed.
+    # We sum ALL contiguous blocks; production/consumption decomposition duals
+    # are typically 0 at the optimum (they represent slack on equality
+    # constraints whose RHS is a free variable), so they add nothing.
+    n_blocks = len(values) // n_periods
+    summed = tuple(
+        sum(values[b * n_periods + i] for b in range(n_blocks)) for i in range(n_periods)
+    )
+    return summed
 
 
 def _stats_outputs(
