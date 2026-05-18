@@ -334,7 +334,8 @@
             "consumption_cost": "Consumption cost",
             "curtailment": "Allow shedding",
             "forecast": "Forecast",
-            "name": "Load Name"
+            "name": "Load Name",
+            "threshold_price": "Threshold price"
           },
           "sections": {
             "common": { "data": { "connection": "Connection", "name": "Load Name" }, "name": "Common settings" },
@@ -342,7 +343,8 @@
               "data": { "consumption_cost": "Consumption cost", "curtailment": "Allow shedding" },
               "name": "Shedding"
             },
-            "forecast": { "data": { "forecast": "Forecast" }, "name": "Forecast" }
+            "forecast": { "data": { "forecast": "Forecast" }, "name": "Forecast" },
+            "threshold": { "data": { "threshold_price": "Threshold price" }, "name": "Threshold" }
           }
         }
       },
@@ -498,6 +500,7 @@
       "inverter_max_power_target_source": { "name": "Max AC to DC power" },
       "load_forecast": { "name": "Forecast" },
       "load_price_target_source": { "name": "Consumption value" },
+      "load_threshold_price": { "name": "Threshold price" },
       "policy_price": { "name": "{rule_name} price" },
       "solar_forecast": { "name": "Forecast" },
       "solar_price_source_target": { "name": "Production price" }
@@ -538,8 +541,17 @@
       "inverter_power_ac_to_dc": { "name": "AC to DC power" },
       "inverter_power_active": { "name": "Active power" },
       "inverter_power_dc_to_ac": { "name": "DC to AC power" },
+      "load_daily_average_cost": { "name": "Daily average cost" },
+      "load_daily_cost": { "name": "Daily cost" },
+      "load_daily_energy": { "name": "Daily energy" },
+      "load_daily_runtime": { "name": "Daily runtime" },
       "load_forecast_limit_price": { "name": "Forecast limit shadow price" },
       "load_power": { "name": "Power" },
+      "load_threshold_price": { "name": "Threshold price" },
+      "load_total_average_cost": { "name": "Total average cost" },
+      "load_total_cost": { "name": "Total cost" },
+      "load_total_energy": { "name": "Total energy" },
+      "load_total_runtime": { "name": "Total runtime" },
       "network_optimization_cost": { "name": "Cost" },
       "network_optimization_duration": { "name": "Duration" },
       "network_optimization_status": { "name": "Status" },
