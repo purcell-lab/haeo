@@ -4,7 +4,10 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, Final, Literal
 
-from custom_components.haeo.core.adapters.output_utils import expect_output_data
+import numpy as np
+from numpy.typing import NDArray
+
+from custom_components.haeo.core.adapters.output_utils import expect_output_data, per_period_dual
 from custom_components.haeo.core.const import ConnectivityLevel
 from custom_components.haeo.core.model import ModelElementConfig, ModelOutputName, ModelOutputValue
 from custom_components.haeo.core.model.const import OutputType
@@ -110,6 +113,8 @@ class InverterAdapter:
         self,
         name: str,
         model_outputs: Mapping[str, Mapping[ModelOutputName, ModelOutputValue]],
+        *,
+        periods: NDArray[np.floating[Any]],
         **_kwargs: Any,
     ) -> Mapping[InverterDeviceName, Mapping[InverterOutputName, OutputData]]:
         """Map model outputs to inverter-specific output names."""
@@ -141,8 +146,15 @@ class InverterAdapter:
             type=OutputType.POWER_FLOW,
         )
 
-        # DC bus power balance shadow price
-        inverter_outputs[INVERTER_DC_BUS_POWER_BALANCE] = expect_output_data(dc_bus[ELEMENT_POWER_BALANCE])
+        # DC bus power balance shadow price. After PR #426 the dual is a
+        # multi-block per-tag series; per_period_dual collapses it back to a
+        # single $/kWh per timestep so the sensor matches its declared shape.
+        if (
+            dc_bus_balance := per_period_dual(
+                expect_output_data(dc_bus[ELEMENT_POWER_BALANCE]), len(periods)
+            )
+        ) is not None:
+            inverter_outputs[INVERTER_DC_BUS_POWER_BALANCE] = dc_bus_balance
 
         # Shadow prices from power_limit segments on each connection
         shadow_price_mappings: tuple[tuple[Mapping[ModelOutputName, ModelOutputValue], InverterOutputName], ...] = (

@@ -5,8 +5,9 @@ from dataclasses import replace
 from typing import Any, Final, Literal
 
 import numpy as np
+from numpy.typing import NDArray
 
-from custom_components.haeo.core.adapters.output_utils import expect_output_data
+from custom_components.haeo.core.adapters.output_utils import expect_output_data, per_period_dual
 from custom_components.haeo.core.const import ConnectivityLevel
 from custom_components.haeo.core.model import ModelElementConfig, ModelOutputName, ModelOutputValue
 from custom_components.haeo.core.model import battery as model_battery
@@ -215,6 +216,8 @@ class BatteryAdapter:
         name: str,
         model_outputs: Mapping[str, Mapping[ModelOutputName, ModelOutputValue]],
         config: BatteryConfigData,
+        *,
+        periods: NDArray[np.floating[Any]],
         **_kwargs: Any,
     ) -> Mapping[BatteryDeviceName, Mapping[BatteryOutputName, OutputData]]:
         """Map model outputs to battery-specific output names."""
@@ -246,7 +249,15 @@ class BatteryAdapter:
             type=OutputType.POWER,
         )
 
-        aggregate_outputs[BATTERY_POWER_BALANCE] = battery_outputs[model_battery.BATTERY_POWER_BALANCE]
+        # After PR #426 the battery internal-node dual is a multi-block
+        # per-tag series; collapse it back to a single $/kWh series for the
+        # power-balance shadow-price sensor.
+        if (
+            battery_balance := per_period_dual(
+                battery_outputs[model_battery.BATTERY_POWER_BALANCE], len(periods)
+            )
+        ) is not None:
+            aggregate_outputs[BATTERY_POWER_BALANCE] = battery_balance
         aggregate_outputs[BATTERY_ENERGY_IN_FLOW] = replace(
             battery_outputs[model_battery.BATTERY_ENERGY_IN_FLOW], advanced=True
         )

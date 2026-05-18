@@ -3,7 +3,10 @@
 from collections.abc import Mapping
 from typing import Any, Final, Literal
 
-from custom_components.haeo.core.adapters.output_utils import expect_output_data
+import numpy as np
+from numpy.typing import NDArray
+
+from custom_components.haeo.core.adapters.output_utils import expect_output_data, per_period_dual
 from custom_components.haeo.core.const import ConnectivityLevel
 from custom_components.haeo.core.model import ModelElementConfig, ModelOutputName, ModelOutputValue
 from custom_components.haeo.core.model.element import ELEMENT_POWER_BALANCE
@@ -59,15 +62,23 @@ class NodeAdapter:
         self,
         name: str,
         model_outputs: Mapping[str, Mapping[ModelOutputName, ModelOutputValue]],
+        *,
+        periods: NDArray[np.floating[Any]],
         **_kwargs: Any,
     ) -> Mapping[NodeDeviceName, Mapping[NodeOutputName, OutputData]]:
         """Convert model element outputs to node adapter outputs."""
         node_model = model_outputs[name]
 
-        # Map Node power_balance to node_power_balance (only present for constrained nodes)
+        # Map Node power_balance to node_power_balance (only present for
+        # constrained nodes). After PR #426 the dual is a multi-block per-tag
+        # series; per_period_dual collapses it back to a single $/kWh series.
         node_outputs: dict[NodeOutputName, OutputData] = {}
         if ELEMENT_POWER_BALANCE in node_model:
-            node_outputs[NODE_POWER_BALANCE] = expect_output_data(node_model[ELEMENT_POWER_BALANCE])
+            balance = per_period_dual(
+                expect_output_data(node_model[ELEMENT_POWER_BALANCE]), len(periods)
+            )
+            if balance is not None:
+                node_outputs[NODE_POWER_BALANCE] = balance
 
         return {NODE_DEVICE_NODE: node_outputs}
 

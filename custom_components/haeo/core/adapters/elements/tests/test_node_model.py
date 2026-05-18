@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict
 
+import numpy as np
 import pytest
 
 from custom_components.haeo.core.adapters.elements.node import NODE_DEVICE_NODE, NODE_POWER_BALANCE
@@ -84,5 +85,7 @@ def test_model_elements(case: CreateCase) -> None:
 def test_outputs_mapping(case: OutputsCase) -> None:
     """Verify adapter maps model outputs to device outputs."""
     entry = ELEMENT_TYPES[ElementType.NODE]
-    result = entry.outputs(case["name"], case["model_outputs"])
+    result = entry.outputs(
+        case["name"], case["model_outputs"], periods=np.array([0.0], dtype=np.float64)
+    )
     assert result == case["outputs"]
