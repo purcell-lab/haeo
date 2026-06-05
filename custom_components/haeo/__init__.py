@@ -141,6 +141,10 @@ class HaeoRuntimeData:
         auto_optimize_switch: Switch controlling automatic optimization.
         coordinator: Coordinator for network-level optimization (set after input platforms).
         value_update_in_progress: Flag to skip reload when updating entity values.
+        value_update_subentry_id: ID of the subentry whose value was just
+            updated (set by ``async_update_subentry_value``). Allows the update
+            listener to scope the coordinator's TrackedParam refresh to the
+            affected participant. ``None`` falls back to refreshing all.
 
     """
 
@@ -149,6 +153,7 @@ class HaeoRuntimeData:
     auto_optimize_switch: AutoOptimizeSwitch | None = field(default=None)
     coordinator: HaeoDataUpdateCoordinator | None = field(default=None)
     value_update_in_progress: bool = field(default=False)
+    value_update_subentry_id: str | None = field(default=None)
 
 
 type HaeoConfigEntry = ConfigEntry[HaeoRuntimeData | None]
@@ -237,9 +242,19 @@ async def async_update_listener(hass: HomeAssistant, entry: HaeoConfigEntry) -> 
     if runtime_data and runtime_data.value_update_in_progress:
         # Clear the flag and skip reload - signal optimization is stale
         runtime_data.value_update_in_progress = False
+        subentry_id = runtime_data.value_update_subentry_id
+        runtime_data.value_update_subentry_id = None
         coordinator = runtime_data.coordinator
         if coordinator:
-            _LOGGER.debug("Value update detected, signaling optimization stale")
+            # Push the new subentry values into the network's TrackedParams
+            # before triggering optimization. Without this step the LP would
+            # keep using the values cached at the previous optimization run
+            # (issue #467 — reload-only reproduction).
+            _LOGGER.debug(
+                "Value update detected on subentry %s, refreshing TrackedParams and signaling optimization stale",
+                subentry_id,
+            )
+            coordinator.handle_subentry_value_update(subentry_id)
             coordinator.signal_optimization_stale()
         return
 

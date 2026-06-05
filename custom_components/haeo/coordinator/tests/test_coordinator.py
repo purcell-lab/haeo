@@ -824,6 +824,72 @@ def test_element_state_change_defers_update_and_triggers_optimization(
 
 
 @pytest.mark.usefixtures("mock_battery_subentry", "mock_grid_subentry")
+def test_handle_subentry_value_update_scopes_to_matching_participant(
+    hass: HomeAssistant,
+    mock_hub_entry: MockConfigEntry,
+    mock_battery_subentry: ConfigSubentry,
+    mock_runtime_data: HaeoRuntimeData,
+) -> None:
+    """Regression for #467: a subentry value edit must enqueue a pending update
+
+    so that the next ``_apply_pending_element_updates`` call pushes the new
+    value into the network's TrackedParams. Before this fix the edit only
+    flowed into ``subentry.data`` and the LP kept using the values cached
+    at the previous run, so a reload was required to see the new value.
+    """
+    coordinator = HaeoDataUpdateCoordinator(hass, mock_hub_entry)
+    coordinator.network = MagicMock()
+
+    element_config = {"element_type": "battery", "name": "Test Battery"}
+
+    with patch.object(coordinator, "_load_element_config", return_value=element_config) as load_mock:
+        coordinator.handle_subentry_value_update(mock_battery_subentry.subentry_id)
+
+    # Only the participant matching the subentry_id is re-queued, not all participants.
+    load_mock.assert_called_once_with("Test Battery")
+    assert coordinator._pending_element_updates == {"Test Battery": element_config}
+
+
+@pytest.mark.usefixtures("mock_battery_subentry", "mock_grid_subentry")
+def test_handle_subentry_value_update_with_none_refreshes_all_participants(
+    hass: HomeAssistant,
+    mock_hub_entry: MockConfigEntry,
+    mock_runtime_data: HaeoRuntimeData,
+) -> None:
+    """With no subentry_id (safe fallback), all participants are re-queued."""
+    coordinator = HaeoDataUpdateCoordinator(hass, mock_hub_entry)
+    coordinator.network = MagicMock()
+
+    def fake_load(name: str) -> dict:
+        return {"element_type": "x", "name": name}
+
+    with patch.object(coordinator, "_load_element_config", side_effect=fake_load) as load_mock:
+        coordinator.handle_subentry_value_update(None)
+
+    # All known participants should have been re-queued exactly once.
+    expected_names = set(coordinator._participant_subentry_ids.keys())
+    assert {call.args[0] for call in load_mock.call_args_list} == expected_names
+    assert set(coordinator._pending_element_updates.keys()) == expected_names
+
+
+@pytest.mark.usefixtures("mock_battery_subentry", "mock_grid_subentry")
+def test_handle_subentry_value_update_ignores_unknown_subentry(
+    hass: HomeAssistant,
+    mock_hub_entry: MockConfigEntry,
+    mock_runtime_data: HaeoRuntimeData,
+) -> None:
+    """An unrecognised subentry_id (e.g. network subentry, hub) is a no-op."""
+    coordinator = HaeoDataUpdateCoordinator(hass, mock_hub_entry)
+    coordinator.network = MagicMock()
+
+    with patch.object(coordinator, "_load_element_config") as load_mock:
+        coordinator.handle_subentry_value_update("this-subentry-does-not-exist")
+
+    load_mock.assert_not_called()
+    assert coordinator._pending_element_updates == {}
+
+
+@pytest.mark.usefixtures("mock_battery_subentry", "mock_grid_subentry")
 def test_horizon_change_triggers_optimization(
     hass: HomeAssistant,
     mock_hub_entry: MockConfigEntry,

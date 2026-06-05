@@ -25,6 +25,11 @@ async def async_update_subentry_value(
     which signals async_update_listener to skip the full integration reload
     and just refresh the coordinator instead.
 
+    It also records the changed ``subentry_id`` on ``runtime_data`` so the
+    listener can ask the coordinator to push the new subentry data into the
+    network's TrackedParams. Without this, the persisted value would only
+    appear in the LP after the next full integration reload (issue #467).
+
     Args:
         hass: Home Assistant instance.
         entry: The hub config entry.
@@ -33,10 +38,11 @@ async def async_update_subentry_value(
         value: New value for the field.
 
     """
-    # Set flag to prevent reload
+    # Set flag to prevent reload and record which subentry changed
     runtime_data = entry.runtime_data
     if runtime_data is not None:
         runtime_data.value_update_in_progress = True
+        runtime_data.value_update_subentry_id = subentry.subentry_id
 
     # Update subentry data with new value
     new_data = copy.deepcopy(dict(subentry.data))
@@ -51,6 +57,7 @@ async def async_update_subentry_value(
     except Exception:
         if runtime_data is not None:
             runtime_data.value_update_in_progress = False
+            runtime_data.value_update_subentry_id = None
         raise
 
 

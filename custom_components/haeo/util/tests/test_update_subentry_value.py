@@ -18,6 +18,7 @@ def mock_runtime_data() -> Mock:
     """Create mock runtime data with value_update_in_progress flag."""
     runtime_data = Mock()
     runtime_data.value_update_in_progress = False
+    runtime_data.value_update_subentry_id = None
     return runtime_data
 
 
@@ -51,6 +52,10 @@ async def test_flag_remains_set_after_call(
     )
 
     assert mock_runtime_data.value_update_in_progress is True
+    # The subentry_id of the edited subentry must be recorded so the
+    # update listener can scope the coordinator's TrackedParam refresh
+    # to the affected participant (issue #467).
+    assert mock_runtime_data.value_update_subentry_id == "test_id"
     hass.config_entries.async_update_subentry.assert_called_once()
     call_args = hass.config_entries.async_update_subentry.call_args
     assert call_args is not None
@@ -87,6 +92,8 @@ async def test_flag_cleared_on_exception(
         )
 
     assert mock_runtime_data.value_update_in_progress is False
+    # subentry_id is also cleared so the listener won't act on stale state
+    assert mock_runtime_data.value_update_subentry_id is None
 
 
 async def test_nested_value_update_fires_listener(

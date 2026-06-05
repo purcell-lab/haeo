@@ -472,6 +472,49 @@ class HaeoDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self.signal_optimization_stale()
 
     @callback
+    def handle_subentry_value_update(self, subentry_id: str | None = None) -> None:
+        """Handle a value-only subentry edit (e.g. user changed a number entity).
+
+        Editable ``number`` / ``switch`` entities persist their new value via
+        :func:`util.async_update_subentry_value`, which mutates the subentry's
+        data but does **not** flow through the per-input ``async_track_state_change_event``
+        callbacks (those only fire for tracked input entities, not for subentry
+        field edits). As a result the network's ``TrackedParam`` descriptors
+        retained their old values across subsequent optimization runs and the
+        only way to pick up the new value was a full integration reload
+        (issue #467).
+
+        This method enqueues a fresh ``_pending_element_updates`` entry for the
+        affected participant(s) so the next ``_apply_pending_element_updates``
+        call (inside ``_async_update_data``) writes the new values into the
+        network before optimization runs.
+
+        Args:
+            subentry_id: If supplied, only the matching participant is re-queued.
+                If ``None`` (the safe fallback when the listener can't tell us
+                which subentry was edited), all participants are re-queued.
+        """
+        if subentry_id is not None:
+            # Reverse lookup: subentry_id -> element name
+            matching = [
+                name for name, sid in self._participant_subentry_ids.items()
+                if sid == subentry_id
+            ]
+        else:
+            matching = list(self._participant_subentry_ids.keys())
+
+        for element_name in matching:
+            try:
+                element_config = self._load_element_config(element_name)
+            except ValueError:
+                _LOGGER.exception(
+                    "Failed to load config for element %s after subentry value update",
+                    element_name,
+                )
+                continue
+            self._pending_element_updates[element_name] = element_config
+
+    @callback
     def _handle_horizon_change(self, network: Network) -> None:
         """Handle horizon manager changes.
 
