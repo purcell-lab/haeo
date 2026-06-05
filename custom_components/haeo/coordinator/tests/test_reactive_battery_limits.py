@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from types import MappingProxyType
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant
@@ -39,7 +39,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.haeo import HaeoRuntimeData
 from custom_components.haeo.const import CONF_INTEGRATION_TYPE, DOMAIN, INTEGRATION_TYPE_HUB
-from custom_components.haeo.coordinator.coordinator import HaeoDataUpdateCoordinator
+from custom_components.haeo.coordinator.coordinator import HaeoDataUpdateCoordinator, _build_optimization_context
 from custom_components.haeo.coordinator.network import create_network
 from custom_components.haeo.core.const import (
     CONF_DEBOUNCE_SECONDS,
@@ -426,3 +426,113 @@ async def test_apply_pending_updates_writes_to_network(
     # New range = (1.0 - 0.2) * 10 = 8.0
     assert np.allclose(cap_after, 8.0), f"capacity didn't update; expected 8.0, got {cap_after}"
     assert coordinator._pending_element_updates == {}
+
+
+async def test_live_repro_min_charge_sequence(
+    hass: HomeAssistant,
+    hub_entry: MockConfigEntry,
+    battery_subentry: ConfigSubentry,
+    runtime_data: HaeoRuntimeData,
+) -> None:
+    """Mirror the live HA reproduction script for issue #467.
+
+    The repro script (``repro_min_soc.py``) drives Mark's live HA instance by
+    posting ``number/set_value`` against ``number.battery_min_charge``, then
+    captures the diagnostics dump and deep-scans for every
+    ``min_charge_percentage`` occurrence. On the unpatched code the diagnostic
+    stayed pinned at the load-time value (10.0) while the entity moved through
+    40.0 and 25.0, and the bug was originally diagnosed from those captures.
+
+    This test mirrors that flow end-to-end inside the test harness:
+
+    1. Build the coordinator with real subentries and real input stores.
+    2. Run the entity-side write path used by ``HaeoInputNumber``:
+       ``store.set_value(v)`` + ``store.persist(...)``. ``persist`` is what
+       calls ``async_update_subentry_value`` and replaces ``subentry.data``
+       with a fresh ``MappingProxyType`` (the exact behaviour the live HA
+       runtime exhibits).
+    3. Call ``_async_update_data`` so the optimization context is rebuilt the
+       same way it is rebuilt on a real run.
+    4. Assert ``result.context.participants['Battery'].limits.min_charge_percentage``
+       matches the value just written, for every value in the sequence the
+       live script used.
+
+    Without the ``_get_live_participant_configs`` fix this test fails on the
+    very first non-baseline write because the context still carries the
+    snapshot captured at coordinator construction (50.0 from the fixture).
+    """
+    runtime_data.input_stores = build_input_stores(hass, hub_entry, runtime_data.horizon_manager)
+    coordinator = HaeoDataUpdateCoordinator(hass, hub_entry)
+    coordinator.network = MagicMock()  # not exercised - optimize is stubbed below
+
+    key = ("Battery", (SECTION_LIMITS, CONF_MIN_CHARGE_PERCENTAGE))
+    store = runtime_data.input_stores[key]
+    store.add_listener(coordinator._create_store_listener("Battery"))
+
+    def _ctx_min_charge(context: Any) -> Any:
+        return context.participants["Battery"][SECTION_LIMITS][CONF_MIN_CHARGE_PERCENTAGE]
+
+    # Sequence taken from repro_min_soc.py. The first value matches the
+    # subentry snapshot to lock down the no-op case; the rest are the values
+    # the live script used to demonstrate the diagnostics staleness.
+    sequence = [10.0, 40.0, 25.0, 50.0]
+
+    captured_contexts: list[Any] = []
+
+    # Spy on ``_build_optimization_context`` to capture the context that
+    # ``_async_update_data`` actually constructs on its production code path.
+    # An UpdateFailed downstream (from the stubbed network) is fine - by the
+    # time it raises, the context has already been built and captured.
+    real_build = _build_optimization_context
+
+    def _spy_build(**kwargs: Any) -> Any:
+        ctx = real_build(**kwargs)
+        captured_contexts.append(ctx)
+        return ctx
+
+    with (
+        patch.object(coordinator, "signal_optimization_stale"),
+        patch(
+            "custom_components.haeo.coordinator.coordinator._build_optimization_context",
+            side_effect=_spy_build,
+        ),
+        patch.object(hass, "async_add_executor_job", new_callable=AsyncMock) as mock_executor,
+        patch("custom_components.haeo.coordinator.coordinator.dismiss_optimization_failure_issue"),
+    ):
+        # Force ``_async_update_data`` to bail out after building the context
+        # but before it needs solved model outputs. ``network.optimize`` is
+        # the first await past the context build, so making it raise stops
+        # us at exactly the right point.
+        mock_executor.side_effect = RuntimeError("stop after context built")
+
+        for value in sequence:
+            # Entity-side write: HaeoInputNumber.async_set_native_value does
+            # exactly this pair of calls. ``persist`` is what mutates
+            # ``subentry.data`` via ``async_update_subentry_value``.
+            store.set_value(value)
+            await store.persist(as_constant_value(value))
+            await hass.async_block_till_done()
+
+            # Sanity check: the subentry's underlying data should now carry
+            # the new value (this is precisely what the live diagnostics dump
+            # reads when it serialises the OptimizationContext).
+            live_subentry = hub_entry.subentries[battery_subentry.subentry_id]
+            persisted = live_subentry.data[SECTION_LIMITS][CONF_MIN_CHARGE_PERCENTAGE]
+            assert persisted == as_constant_value(value), (
+                f"subentry.data did not reflect persisted value {value}: got {persisted}"
+            )
+
+            # Drive the actual production code path. We expect the stubbed
+            # optimize to raise, but the context has been captured by then.
+            captured_contexts.clear()
+            with pytest.raises(RuntimeError, match="stop after context built"):
+                await coordinator._async_update_data()
+
+            assert captured_contexts, (
+                "_build_optimization_context was not invoked from _async_update_data"
+            )
+            observed = _ctx_min_charge(captured_contexts[-1])
+            assert observed == as_constant_value(value), (
+                f"OptimizationContext stale after setting min_charge={value}: "
+                f"got {observed}, expected {as_constant_value(value)}"
+            )
