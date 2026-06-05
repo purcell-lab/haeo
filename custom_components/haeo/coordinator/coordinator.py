@@ -351,6 +351,23 @@ class HaeoDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorData]):
         """
         return self._participant_configs
 
+    def _get_live_participant_configs(self) -> dict[str, ElementConfigSchema]:
+        """Return participant schemas read live from current subentry data.
+
+        Unlike :meth:`_get_participant_configs`, which returns the structural
+        snapshot captured at construction, this reads the latest ``subentry.data``
+        for each participant. Field-value edits made via
+        :func:`util.async_update_subentry_value` are reflected here, so the
+        optimization context (and resulting diagnostics) carry the values
+        actually in effect for this run, not the stale ones from setup.
+
+        Structure is still validated against the captured snapshot keys: any
+        subentry that disappears from ``config_entry.subentries`` is omitted,
+        and any that fails the typed schema validation is skipped (a reload is
+        the only path to introduce structural changes).
+        """
+        return get_element_configs(self.config_entry, self._participant_subentry_ids)
+
     async def async_initialize(self) -> None:
         """Initialize the network and set up subscriptions.
 
@@ -739,10 +756,13 @@ class HaeoDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
             forecast_timestamps = runtime_data.horizon_manager.get_forecast_timestamps()
 
-            # Build optimization context capturing all inputs for reproducibility
+            # Build optimization context capturing all inputs for reproducibility.
+            # Use live participant schemas so the context (and diagnostics) reflect
+            # the values actually in effect for this run; the structural snapshot
+            # only governs which elements exist, not their field values.
             context = _build_optimization_context(
                 hub_config=self.config_entry.data,
-                participant_configs=self._get_participant_configs(),
+                participant_configs=self._get_live_participant_configs(),
                 input_stores=runtime_data.input_stores,
                 horizon_manager=runtime_data.horizon_manager,
             )
