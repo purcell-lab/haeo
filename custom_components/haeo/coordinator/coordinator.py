@@ -100,6 +100,11 @@ class CoordinatorOutput:
     # (the slot it describes has already elapsed without a re-solve). None when
     # the output has no per-slot timing (single-value or no forecast_times).
     state_slot_end: datetime | None = None
+    # Free-form label describing how ``state`` was derived. Defaulted by the
+    # coordinator from ``state_last`` when the adapter does not set it. Lets
+    # downstream consumers filter on the meaning of ``state`` (e.g. only act
+    # on outputs whose state_source == "measured").
+    state_source: str = "horizon_first"
 
 
 # Minimum number of horizon boundary timestamps required to compute an end-of-slot
@@ -213,6 +218,13 @@ def _build_coordinator_output(
         state = values[0]
     forecast: list[ForecastPoint] | None = None
     state_slot_end: datetime | None = None
+    # Default the published state_source label from the existing state_last
+    # boolean when the adapter does not override it. Adapters can set
+    # ``OutputData.state_source`` to advertise other derivations (e.g.
+    # "measured" when an output mirrors a measured input).
+    state_source = output_data.state_source if output_data.state_source is not None else (
+        "horizon_last" if output_data.state_last else "horizon_first"
+    )
 
     if forecast_times and len(values) > 1:
         try:
@@ -262,6 +274,7 @@ def _build_coordinator_output(
         is_forecast=output_data.is_forecast,
         next_planned=next_planned if output_data.is_forecast else None,
         state_slot_end=state_slot_end,
+        state_source=state_source,
     )
 
 

@@ -116,6 +116,11 @@ class HaeoSensor(CoordinatorEntity[HaeoDataUpdateCoordinator], SensorEntity):
                     # datetime; HA serializes it to ISO-8601 in the state
                     # machine. Omitted when no per-slot timing applies.
                     attributes["state_slot_end"] = output_data.state_slot_end
+                # Label describing how ``state`` was derived (e.g.
+                # ``horizon_first``, ``horizon_last``, ``measured``). Lets
+                # downstream automations filter on the meaning of ``state``
+                # rather than guessing from the element type.
+                attributes["state_source"] = output_data.state_source
                 self._apply_output(output_data)
                 if output_data.state is not None:
                     native_value = self._scale_percentage_state(output_data.unit, output_data.state)

@@ -24,6 +24,12 @@ class OutputData:
         advanced: Whether the output is intended for advanced diagnostics only.
         state_last: If True, the sensor state uses the last value instead of the first.
             Use for cumulative values where the total is the meaningful current state.
+        state_source: Optional free-form label describing how ``state`` is derived,
+            emitted verbatim as the ``state_source`` sensor attribute. When None,
+            the coordinator publishes a default label inferred from ``state_last``
+            (``"horizon_first"`` or ``"horizon_last"``). Adapters may set this
+            explicitly to advertise other derivations (e.g. ``"measured"`` when an
+            output mirrors a measured input rather than a horizon value).
         is_forecast: If True, the sensor state is a planned (forecast) value from the
             optimizer rather than a measurement. State value is unchanged for back-compat,
             but two extra-state attributes are emitted so downstream automations can
@@ -44,6 +50,7 @@ class OutputData:
     direction: Literal["+", "-"] | None = None
     advanced: bool = False
     state_last: bool = False
+    state_source: str | None = None
     is_forecast: bool = False
     priority: int | None = None
     fixed: bool = False
@@ -57,6 +64,7 @@ class OutputData:
         *,
         advanced: bool = False,
         state_last: bool = False,
+        state_source: str | None = None,
         is_forecast: bool = False,
         priority: int | None = None,
         fixed: bool = False,
@@ -70,6 +78,7 @@ class OutputData:
             direction: Power flow direction relative to the element.
             advanced: Whether the output is intended for advanced diagnostics only.
             state_last: If True, the sensor state uses the last value instead of the first.
+            state_source: Optional label describing how ``state`` is derived (see class docstring).
             is_forecast: If True, mark the state as a planned value (see class docstring).
             priority: The connection priority for this output, if applicable.
             fixed: Whether the output is constrained to equal its forecast (no curtailment).
@@ -80,6 +89,7 @@ class OutputData:
         self.direction = direction
         self.advanced = advanced
         self.state_last = state_last
+        self.state_source = state_source
         self.is_forecast = is_forecast
         self.priority = priority
         self.fixed = fixed
