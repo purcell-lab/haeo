@@ -221,8 +221,21 @@ class BatteryAdapter:
         charge_conn = model_outputs.get(f"{name}:charge")
         period_count = len(expect_output_data(model_outputs[name][model_battery.BATTERY_POWER_CHARGE]).values)
 
-        power_discharge = replace(connection_power(discharge_conn, period_count), type=OutputType.POWER)
-        power_charge = replace(connection_power(charge_conn, period_count), type=OutputType.POWER, direction="-")
+        # haeo#477: POWER outputs are planned values from the optimizer.
+        # Mark them so downstream automations can filter on the ``is_forecast``
+        # attribute and avoid acting on horizon[0] swings as if they were
+        # measured setpoints. State value is unchanged for back-compat.
+        power_discharge = replace(
+            connection_power(discharge_conn, period_count),
+            type=OutputType.POWER,
+            is_forecast=True,
+        )
+        power_charge = replace(
+            connection_power(charge_conn, period_count),
+            type=OutputType.POWER,
+            direction="-",
+            is_forecast=True,
+        )
 
         # Battery-internal outputs (energy, SOC, shadow prices)
         battery_outputs = {key: expect_output_data(value) for key, value in model_outputs[name].items()}
@@ -243,6 +256,7 @@ class BatteryAdapter:
             values=[d - c for d, c in zip(power_discharge.values, power_charge.values, strict=True)],
             direction=None,
             type=OutputType.POWER,
+            is_forecast=True,  # haeo#477
         )
 
         aggregate_outputs[BATTERY_POWER_BALANCE] = battery_outputs[model_battery.BATTERY_POWER_BALANCE]

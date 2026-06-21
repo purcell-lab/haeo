@@ -88,6 +88,12 @@ class CoordinatorOutput:
     advanced: bool = False
     priority: int | None = None
     fixed: bool = False
+    # When True, the entity state is a planned (forecast) value from the optimizer
+    # rather than a measurement. State is unchanged for back-compat; downstream
+    # consumers should filter on the ``is_forecast`` attribute. See hass-energy/haeo#477.
+    is_forecast: bool = False
+    # The horizon[0] planned value, exposed as an attribute alongside the state.
+    next_planned: StateType | None = None
 
 
 DEVICE_CLASS_MAP: dict[OutputType, SensorDeviceClass] = {
@@ -186,6 +192,7 @@ def _build_coordinator_output(
     """
 
     values = tuple(output_data.values)
+    next_planned: StateType | None = values[0] if values else None
     if not values:
         state = None
     elif output_data.state_last:
@@ -224,6 +231,8 @@ def _build_coordinator_output(
         advanced=output_data.advanced,
         priority=output_data.priority,
         fixed=output_data.fixed,
+        is_forecast=output_data.is_forecast,
+        next_planned=next_planned if output_data.is_forecast else None,
     )
 
 

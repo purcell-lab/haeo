@@ -100,6 +100,14 @@ class HaeoSensor(CoordinatorEntity[HaeoDataUpdateCoordinator], SensorEntity):
                 attributes["advanced"] = output_data.advanced
                 if output_data.fixed:
                     attributes["fixed"] = True
+                if output_data.is_forecast:
+                    # Mark the entity state as a planned (forecast) value rather
+                    # than a measurement, so downstream automations can filter
+                    # planned values vs measurements. State itself is unchanged.
+                    # See hass-energy/haeo#477.
+                    attributes["is_forecast"] = True
+                    if output_data.next_planned is not None:
+                        attributes["next_planned"] = output_data.next_planned
                 self._apply_output(output_data)
                 if output_data.state is not None:
                     native_value = self._scale_percentage_state(output_data.unit, output_data.state)

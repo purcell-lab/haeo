@@ -24,6 +24,14 @@ class OutputData:
         advanced: Whether the output is intended for advanced diagnostics only.
         state_last: If True, the sensor state uses the last value instead of the first.
             Use for cumulative values where the total is the meaningful current state.
+        is_forecast: If True, the sensor state is a planned (forecast) value from the
+            optimizer rather than a measurement. State value is unchanged for back-compat,
+            but two extra-state attributes are emitted so downstream automations can
+            distinguish planned values from measurements:
+              - ``is_forecast: true``
+              - ``next_planned: <values[0]>``
+            Mitigates hass-energy/haeo#477 (transient grid disturbances when horizon[0]
+            swings are interpreted as measured setpoints).
         priority: Connection time-preference priority. Lower values are preferred
             earlier by the secondary objective. None for non-connection outputs.
         fixed: Whether the output is constrained to equal its forecast (no curtailment).
@@ -36,6 +44,7 @@ class OutputData:
     direction: Literal["+", "-"] | None = None
     advanced: bool = False
     state_last: bool = False
+    is_forecast: bool = False
     priority: int | None = None
     fixed: bool = False
 
@@ -48,6 +57,7 @@ class OutputData:
         *,
         advanced: bool = False,
         state_last: bool = False,
+        is_forecast: bool = False,
         priority: int | None = None,
         fixed: bool = False,
     ) -> None:
@@ -60,6 +70,7 @@ class OutputData:
             direction: Power flow direction relative to the element.
             advanced: Whether the output is intended for advanced diagnostics only.
             state_last: If True, the sensor state uses the last value instead of the first.
+            is_forecast: If True, mark the state as a planned value (see class docstring).
             priority: The connection priority for this output, if applicable.
             fixed: Whether the output is constrained to equal its forecast (no curtailment).
 
@@ -69,6 +80,7 @@ class OutputData:
         self.direction = direction
         self.advanced = advanced
         self.state_last = state_last
+        self.is_forecast = is_forecast
         self.priority = priority
         self.fixed = fixed
 
