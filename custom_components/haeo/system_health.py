@@ -42,8 +42,16 @@ async def async_system_health_info(hass: HomeAssistant) -> dict[str, Any]:
         prefix = f"{entry_name}_"
         hub_key = entry_name
 
-        # Get coordinator from runtime data
-        coordinator = entry.runtime_data
+        # Get runtime data; coordinator is nested inside HaeoRuntimeData.
+        # (Prior to this fix the code treated runtime_data as the coordinator
+        # directly, which raised AttributeError on every System Health probe.)
+        runtime_data = entry.runtime_data
+
+        if runtime_data is None:
+            health_info[f"{prefix}status"] = "runtime_data_not_initialized"
+            continue
+
+        coordinator = runtime_data.coordinator
 
         if coordinator is None:
             health_info[f"{prefix}status"] = "coordinator_not_initialized"
