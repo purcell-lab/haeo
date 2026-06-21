@@ -94,6 +94,18 @@ class CoordinatorOutput:
     is_forecast: bool = False
     # The horizon[0] planned value, exposed as an attribute alongside the state.
     next_planned: StateType | None = None
+    # End-of-slot timestamp for the horizon period that ``state`` represents.
+    # Lets downstream automations check ``state_slot_end > now()`` to decide
+    # whether the published state is still current (a fresh solve) or stale
+    # (the slot it describes has already elapsed without a re-solve). None when
+    # the output has no per-slot timing (single-value or no forecast_times).
+    state_slot_end: datetime | None = None
+
+
+# Minimum number of horizon boundary timestamps required to compute an end-of-slot
+# datetime for the entity ``state``. Need at least two boundaries to bracket the
+# slot that ``state`` represents.
+_MIN_BOUNDARIES_FOR_SLOT_END = 2
 
 
 DEVICE_CLASS_MAP: dict[OutputType, SensorDeviceClass] = {
@@ -200,6 +212,7 @@ def _build_coordinator_output(
     else:
         state = values[0]
     forecast: list[ForecastPoint] | None = None
+    state_slot_end: datetime | None = None
 
     if forecast_times and len(values) > 1:
         try:
@@ -213,6 +226,21 @@ def _build_coordinator_output(
             ]
         except ValueError:
             forecast = None
+
+    # Compute the end-of-slot timestamp for ``state``. Skipped when ``state`` is
+    # None (suppressed) or when we don't have enough boundary timestamps to
+    # bracket it. ``forecast_times`` contains n+1 boundaries for n interval
+    # periods; ``values[i]`` ends at ``forecast_times[i+1]`` for interval
+    # outputs, and ``values[i]`` remains current until the next boundary
+    # ``forecast_times[i+1]`` for boundary outputs. Both follow the same rule.
+    if state is not None and forecast_times and len(forecast_times) >= _MIN_BOUNDARIES_FOR_SLOT_END:
+        slot_end_idx = len(values) if output_data.state_last else 1
+        if slot_end_idx < len(forecast_times):
+            try:
+                local_tz = dt_util.get_default_time_zone()
+                state_slot_end = datetime.fromtimestamp(forecast_times[slot_end_idx], tz=local_tz)
+            except (ValueError, OSError, OverflowError):
+                state_slot_end = None
 
     return CoordinatorOutput(
         type=output_data.type,
@@ -233,6 +261,7 @@ def _build_coordinator_output(
         fixed=output_data.fixed,
         is_forecast=output_data.is_forecast,
         next_planned=next_planned if output_data.is_forecast else None,
+        state_slot_end=state_slot_end,
     )
 
 

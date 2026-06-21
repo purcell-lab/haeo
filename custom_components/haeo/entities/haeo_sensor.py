@@ -108,6 +108,14 @@ class HaeoSensor(CoordinatorEntity[HaeoDataUpdateCoordinator], SensorEntity):
                     attributes["is_forecast"] = True
                     if output_data.next_planned is not None:
                         attributes["next_planned"] = output_data.next_planned
+                if output_data.state_slot_end is not None:
+                    # End-of-slot timestamp for the horizon period ``state``
+                    # represents. Lets dashboards/automations check
+                    # ``state_slot_end > now()`` to decide whether the published
+                    # state is still current. Emitted as a timezone-aware
+                    # datetime; HA serializes it to ISO-8601 in the state
+                    # machine. Omitted when no per-slot timing applies.
+                    attributes["state_slot_end"] = output_data.state_slot_end
                 self._apply_output(output_data)
                 if output_data.state is not None:
                     native_value = self._scale_percentage_state(output_data.unit, output_data.state)
