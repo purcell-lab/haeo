@@ -21,7 +21,7 @@ from custom_components.haeo.core.adapters.elements.grid import (
 from custom_components.haeo.core.adapters.elements.tests.normalize import normalize_for_compare
 from custom_components.haeo.core.adapters.registry import ELEMENT_TYPES
 from custom_components.haeo.core.model import ModelOutputName, ModelOutputValue
-from custom_components.haeo.core.model.const import OutputType
+from custom_components.haeo.core.model.const import OutputType, StateSource
 from custom_components.haeo.core.model.elements import (
     MODEL_ELEMENT_TYPE_CONNECTION,
     MODEL_ELEMENT_TYPE_NODE,
@@ -140,13 +140,25 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                 GRID_POWER_IMPORT: OutputData(type=OutputType.POWER, unit="kW", values=(5.0,), direction="+"),
                 GRID_POWER_ACTIVE: OutputData(type=OutputType.POWER, unit="kW", values=(3.0,), direction=None),
                 GRID_COST_IMPORT: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.50,), direction="-", state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.50,),
+                    direction="-",
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_REVENUE_EXPORT: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.10,), direction="+", state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.10,),
+                    direction="+",
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_COST_NET: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.40,), direction=None, state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.40,),
+                    direction=None,
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_POWER_MAX_EXPORT_PRICE: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.01,)),
                 GRID_POWER_MAX_IMPORT_PRICE: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.02,)),
@@ -185,13 +197,25 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                 GRID_POWER_IMPORT: OutputData(type=OutputType.POWER, unit="kW", values=(5.0,), direction="+"),
                 GRID_POWER_ACTIVE: OutputData(type=OutputType.POWER, unit="kW", values=(5.0,), direction=None),
                 GRID_COST_IMPORT: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.50,), direction="-", state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.50,),
+                    direction="-",
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_REVENUE_EXPORT: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.0,), direction="+", state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.0,),
+                    direction="+",
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_COST_NET: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.50,), direction=None, state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.50,),
+                    direction=None,
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_POWER_MAX_IMPORT_PRICE: OutputData(type=OutputType.SHADOW_PRICE, unit="$/kWh", values=(0.02,)),
             }
@@ -229,13 +253,25 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                 GRID_POWER_IMPORT: OutputData(type=OutputType.POWER, unit="kW", values=(5.0, 3.0), direction="+"),
                 GRID_POWER_ACTIVE: OutputData(type=OutputType.POWER, unit="kW", values=(5.0, 3.0), direction=None),
                 GRID_COST_IMPORT: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.25, 0.55), direction="-", state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.25, 0.55),
+                    direction="-",
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_REVENUE_EXPORT: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.0, 0.0), direction="+", state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.0, 0.0),
+                    direction="+",
+                    state_source=StateSource.HORIZON_LAST,
                 ),
                 GRID_COST_NET: OutputData(
-                    type=OutputType.COST, unit="$", values=(0.25, 0.55), direction=None, state_last=True
+                    type=OutputType.COST,
+                    unit="$",
+                    values=(0.25, 0.55),
+                    direction=None,
+                    state_source=StateSource.HORIZON_LAST,
                 ),
             }
         },

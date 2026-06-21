@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from custom_components.haeo.core.adapters.output_utils import connection_power, expect_output_data
 from custom_components.haeo.core.const import ConnectivityLevel
 from custom_components.haeo.core.model import ModelElementConfig, ModelOutputName, ModelOutputValue
-from custom_components.haeo.core.model.const import OutputType
+from custom_components.haeo.core.model.const import OutputType, StateSource
 from custom_components.haeo.core.model.elements import MODEL_ELEMENT_TYPE_CONNECTION, MODEL_ELEMENT_TYPE_NODE
 from custom_components.haeo.core.model.elements.connection import CONNECTION_SEGMENTS
 from custom_components.haeo.core.model.output_data import OutputData
@@ -155,7 +155,11 @@ class GridAdapter:
         )
         import_cumsum = tuple(np.cumsum(import_cost_values))
         grid_outputs[GRID_COST_IMPORT] = OutputData(
-            type=OutputType.COST, unit="$", values=import_cumsum, direction="-", state_last=True
+            type=OutputType.COST,
+            unit="$",
+            values=import_cumsum,
+            direction="-",
+            state_source=StateSource.HORIZON_LAST,
         )
 
         # Export revenue: positive = money earned (power to grid * price * period)
@@ -165,14 +169,22 @@ class GridAdapter:
         )
         export_cumsum = tuple(np.cumsum(export_revenue_values))
         grid_outputs[GRID_REVENUE_EXPORT] = OutputData(
-            type=OutputType.COST, unit="$", values=export_cumsum, direction="+", state_last=True
+            type=OutputType.COST,
+            unit="$",
+            values=export_cumsum,
+            direction="+",
+            state_source=StateSource.HORIZON_LAST,
         )
 
         # Net cost = import cost - export revenue (positive = net spending, negative = net earning)
         net_cost_values = tuple(ic - er for ic, er in zip(import_cost_values, export_revenue_values, strict=True))
         net_cumsum = tuple(np.cumsum(net_cost_values))
         grid_outputs[GRID_COST_NET] = OutputData(
-            type=OutputType.COST, unit="$", values=net_cumsum, direction=None, state_last=True
+            type=OutputType.COST,
+            unit="$",
+            values=net_cumsum,
+            direction=None,
+            state_source=StateSource.HORIZON_LAST,
         )
 
         # Output the shadow prices from power_limit segments on each connection

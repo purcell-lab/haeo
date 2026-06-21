@@ -45,3 +45,23 @@ class OutputType(StrEnum):
     STATUS = auto()
     DURATION = auto()
     SHADOW_PRICE = auto()
+
+
+class StateSource(StrEnum):
+    """How a sensor's ``state`` is derived from the optimizer output ``values``.
+
+    HORIZON_FIRST: ``state = values[0]`` (default). The first horizon period
+        represents the optimizer's current-period setpoint.
+    HORIZON_LAST: ``state = values[-1]``. Used for cumulative series
+        (for example cost cumsums) where the running total at the end of the
+        horizon is the meaningful current state.
+    NONE: ``state = None``. The optimizer publishes a horizon but no
+        scalar state. Downstream consumers must read the ``forecast`` or
+        ``next_planned`` attributes. Useful where exposing a forecast value
+        as state has been observed to drive physical actuators incorrectly
+        (see hass-energy/haeo#477).
+    """
+
+    HORIZON_FIRST = auto()
+    HORIZON_LAST = auto()
+    NONE = auto()

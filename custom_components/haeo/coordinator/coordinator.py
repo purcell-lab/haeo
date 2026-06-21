@@ -33,7 +33,7 @@ from custom_components.haeo.core.adapters.registry import ELEMENT_TYPES
 from custom_components.haeo.core.const import CONF_DEBOUNCE_SECONDS, CONF_ELEMENT_TYPE, DEFAULT_DEBOUNCE_SECONDS
 from custom_components.haeo.core.context import OptimizationContext
 from custom_components.haeo.core.data.loader.config_loader import load_element_config_from_values
-from custom_components.haeo.core.model import ModelOutputName, Network, OutputData, OutputType
+from custom_components.haeo.core.model import ModelOutputName, Network, OutputData, OutputType, StateSource
 from custom_components.haeo.core.model.topology import serialize_topology
 from custom_components.haeo.core.schema.elements import ElementConfigData, ElementConfigSchema
 from custom_components.haeo.core.schema.util import extract_unit_parts
@@ -193,11 +193,12 @@ def _build_coordinator_output(
 
     values = tuple(output_data.values)
     next_planned: StateType | None = values[0] if values else None
-    if not values:
+    if not values or output_data.state_source == StateSource.NONE:
         state = None
-    elif output_data.state_last:
+    elif output_data.state_source == StateSource.HORIZON_LAST:
         state = values[-1]
     else:
+        # Default: StateSource.HORIZON_FIRST -> values[0]
         state = values[0]
     forecast: list[ForecastPoint] | None = None
 

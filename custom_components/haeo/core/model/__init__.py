@@ -1,7 +1,7 @@
 """HAEO energy modeling components."""
 
 # Re-export submodules for backwards compatibility with adapters
-from .const import OutputType
+from .const import OutputType, StateSource
 from .element import Element as Element
 from .element import NetworkElement as NetworkElement
 from .elements import ModelElementConfig as ModelElementConfig
@@ -43,4 +43,5 @@ __all__ = [
     "NodeOutputName",
     "OutputData",
     "OutputType",
+    "StateSource",
 ]

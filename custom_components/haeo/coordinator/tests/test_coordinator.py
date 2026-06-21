@@ -6,6 +6,7 @@ import time
 from types import MappingProxyType
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
+import warnings
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import STATE_OFF, STATE_ON, EntityCategory, UnitOfEnergy
@@ -60,7 +61,7 @@ from custom_components.haeo.core.const import (
     DEFAULT_TIER_3_DURATION,
     DEFAULT_TIER_4_DURATION,
 )
-from custom_components.haeo.core.model import Network, OutputData, OutputType
+from custom_components.haeo.core.model import Network, OutputData, OutputType, StateSource
 from custom_components.haeo.core.model.elements import MODEL_ELEMENT_TYPE_NODE
 from custom_components.haeo.core.schema import as_connection_target, as_constant_value, as_entity_value
 from custom_components.haeo.core.schema.elements import ElementType
@@ -647,18 +648,70 @@ def test_build_coordinator_output_skips_forecast_for_single_value() -> None:
     assert output.forecast is None
 
 
-def test_build_coordinator_output_uses_last_value_when_state_last() -> None:
-    """Cumulative outputs with state_last=True should use the last value as state."""
+def test_build_coordinator_output_uses_last_value_when_horizon_last() -> None:
+    """Cumulative outputs with HORIZON_LAST should use the last value as state."""
 
     output = _build_coordinator_output(
         SOLAR_POWER,
-        OutputData(type=OutputType.POWER, unit="kW", values=(1.0, 2.0, 3.0), state_last=True),
+        OutputData(
+            type=OutputType.POWER,
+            unit="kW",
+            values=(1.0, 2.0, 3.0),
+            state_source=StateSource.HORIZON_LAST,
+        ),
         forecast_times=(1, 2, 3),
         currency_sym="$",
     )
 
     assert output.state == 3.0  # Last value, not first
     assert output.forecast is not None
+
+
+def test_build_coordinator_output_suppresses_state_when_none() -> None:
+    """Outputs with StateSource.NONE should publish state=None while keeping forecast."""
+
+    output = _build_coordinator_output(
+        SOLAR_POWER,
+        OutputData(
+            type=OutputType.POWER,
+            unit="kW",
+            values=(1.0, 2.0, 3.0),
+            state_source=StateSource.NONE,
+            is_forecast=True,
+        ),
+        forecast_times=(1, 2, 3),
+        currency_sym="$",
+    )
+
+    assert output.state is None
+    assert output.forecast is not None
+    assert output.is_forecast is True
+    assert output.next_planned == 1.0
+
+
+def test_output_data_state_last_alias_emits_deprecation_warning() -> None:
+    """Passing state_last= still works but should emit DeprecationWarning."""
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        data = OutputData(type=OutputType.POWER, unit="kW", values=(1.0, 2.0), state_last=True)
+
+    assert data.state_source == StateSource.HORIZON_LAST
+    assert data.state_last is True  # back-compat property
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+
+def test_output_data_rejects_both_state_source_and_state_last() -> None:
+    """Mixing state_source and state_last is a programming error."""
+
+    with pytest.raises(TypeError):
+        OutputData(
+            type=OutputType.POWER,
+            unit="kW",
+            values=(1.0,),
+            state_source=StateSource.HORIZON_FIRST,
+            state_last=True,
+        )
 
 
 def test_build_coordinator_output_handles_empty_values() -> None:

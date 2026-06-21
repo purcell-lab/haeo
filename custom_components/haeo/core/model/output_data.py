@@ -3,10 +3,11 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
+import warnings
 
 import numpy as np
 
-from .const import OutputType
+from .const import OutputType, StateSource
 
 
 @dataclass(slots=True)
@@ -22,16 +23,18 @@ class OutputData:
             "-" = consumption: power removed from the system (load demand, battery charge, grid export).
             None = non-directional output (SOC, prices, energy, shadow prices).
         advanced: Whether the output is intended for advanced diagnostics only.
-        state_last: If True, the sensor state uses the last value instead of the first.
-            Use for cumulative values where the total is the meaningful current state.
+        state_source: How the sensor ``state`` is derived from ``values``.
+            See ``StateSource`` for the options. Defaults to ``HORIZON_FIRST``.
         is_forecast: If True, the sensor state is a planned (forecast) value from the
-            optimizer rather than a measurement. State value is unchanged for back-compat,
-            but two extra-state attributes are emitted so downstream automations can
-            distinguish planned values from measurements:
+            optimizer rather than a measurement. Two extra-state attributes are
+            emitted so downstream automations can distinguish planned values from
+            measurements:
               - ``is_forecast: true``
               - ``next_planned: <values[0]>``
             Mitigates hass-energy/haeo#477 (transient grid disturbances when horizon[0]
-            swings are interpreted as measured setpoints).
+            swings are interpreted as measured setpoints). Orthogonal to
+            ``state_source``: a forecast can still publish a scalar state
+            (``HORIZON_FIRST``) or suppress it (``NONE``).
         priority: Connection time-preference priority. Lower values are preferred
             earlier by the secondary objective. None for non-connection outputs.
         fixed: Whether the output is constrained to equal its forecast (no curtailment).
@@ -43,7 +46,7 @@ class OutputData:
     values: Sequence[Any]
     direction: Literal["+", "-"] | None = None
     advanced: bool = False
-    state_last: bool = False
+    state_source: StateSource = StateSource.HORIZON_FIRST
     is_forecast: bool = False
     priority: int | None = None
     fixed: bool = False
@@ -56,7 +59,8 @@ class OutputData:
         direction: Literal["+", "-"] | None = None,
         *,
         advanced: bool = False,
-        state_last: bool = False,
+        state_source: StateSource | None = None,
+        state_last: bool | None = None,
         is_forecast: bool = False,
         priority: int | None = None,
         fixed: bool = False,
@@ -69,17 +73,34 @@ class OutputData:
             values: A single value or sequence of values (already extracted from HiGHS types).
             direction: Power flow direction relative to the element.
             advanced: Whether the output is intended for advanced diagnostics only.
-            state_last: If True, the sensor state uses the last value instead of the first.
+            state_source: How ``state`` is derived from ``values`` (see ``StateSource``).
+                Defaults to ``StateSource.HORIZON_FIRST``.
+            state_last: Deprecated. If True, equivalent to
+                ``state_source=StateSource.HORIZON_LAST``. Cannot be combined with
+                an explicit ``state_source`` argument. Will be removed in a future
+                release.
             is_forecast: If True, mark the state as a planned value (see class docstring).
             priority: The connection priority for this output, if applicable.
             fixed: Whether the output is constrained to equal its forecast (no curtailment).
 
         """
+        # Resolve state_source from the (possibly deprecated) state_last alias.
+        if state_last is not None:
+            if state_source is not None:
+                msg = "Pass either state_source= or state_last=, not both."
+                raise TypeError(msg)
+            warnings.warn(
+                "OutputData(state_last=...) is deprecated; use "
+                "state_source=StateSource.HORIZON_LAST instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            state_source = StateSource.HORIZON_LAST if state_last else StateSource.HORIZON_FIRST
         self.type = type
         self.unit = unit
         self.direction = direction
         self.advanced = advanced
-        self.state_last = state_last
+        self.state_source = state_source if state_source is not None else StateSource.HORIZON_FIRST
         self.is_forecast = is_forecast
         self.priority = priority
         self.fixed = fixed
@@ -94,6 +115,14 @@ class OutputData:
         else:
             # Wrap single values in tuple
             self.values = (values,)
+
+    @property
+    def state_last(self) -> bool:
+        """Back-compat shim. True when ``state_source`` is ``HORIZON_LAST``.
+
+        Deprecated: read ``state_source`` directly.
+        """
+        return self.state_source == StateSource.HORIZON_LAST
 
 
 type ModelOutputValue = OutputData | Mapping[str, OutputData] | Mapping[str, Mapping[str, OutputData]]
