@@ -303,9 +303,15 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                 connection.CONNECTION_POWER: OutputData(
                     type=OutputType.POWER_FLOW, unit="kW", values=(0.5,), direction="+"
                 ),
+                connection.CONNECTION_POWER_OUT: OutputData(
+                    type=OutputType.POWER_FLOW, unit="kW", values=(0.5,), direction="+"
+                ),
             },
             "battery_no_balance:charge": {
                 connection.CONNECTION_POWER: OutputData(
+                    type=OutputType.POWER_FLOW, unit="kW", values=(1.0,), direction="-"
+                ),
+                connection.CONNECTION_POWER_OUT: OutputData(
                     type=OutputType.POWER_FLOW, unit="kW", values=(1.0,), direction="-"
                 ),
             },
@@ -382,6 +388,9 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
             },
             "battery_no_balance:discharge": {
                 connection.CONNECTION_POWER: OutputData(
+                    type=OutputType.POWER_FLOW, unit="kW", values=(0.5,), direction="+"
+                ),
+                connection.CONNECTION_POWER_OUT: OutputData(
                     type=OutputType.POWER_FLOW, unit="kW", values=(0.5,), direction="+"
                 ),
             },
@@ -466,9 +475,15 @@ OUTPUTS_CASES: Sequence[OutputsCase] = [
                 connection.CONNECTION_POWER: OutputData(
                     type=OutputType.POWER_FLOW, unit="kW", values=(0.5,), direction="+"
                 ),
+                connection.CONNECTION_POWER_OUT: OutputData(
+                    type=OutputType.POWER_FLOW, unit="kW", values=(0.5,), direction="+"
+                ),
             },
             "battery_with_thresholds:charge": {
                 connection.CONNECTION_POWER: OutputData(
+                    type=OutputType.POWER_FLOW, unit="kW", values=(1.0,), direction="-"
+                ),
+                connection.CONNECTION_POWER_OUT: OutputData(
                     type=OutputType.POWER_FLOW, unit="kW", values=(1.0,), direction="-"
                 ),
             },

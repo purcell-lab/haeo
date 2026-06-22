@@ -4,7 +4,9 @@ from collections.abc import Sequence
 
 from homeassistant.core import HomeAssistant
 import numpy as np
+import pytest
 
+from custom_components.haeo.core.adapters.elements.battery import BATTERY_DEVICE_BATTERY, BATTERY_POWER_ACTIVE
 from custom_components.haeo.core.adapters.elements.battery import adapter as battery_adapter
 from custom_components.haeo.core.model import Network
 from custom_components.haeo.core.model.elements import (
@@ -18,6 +20,7 @@ from custom_components.haeo.core.model.elements.connection import ConnectionElem
 from custom_components.haeo.core.model.elements.segments import is_efficiency_spec
 from custom_components.haeo.core.schema import as_connection_target, as_constant_value, as_entity_value, as_none_value
 from custom_components.haeo.core.schema.elements import battery
+from custom_components.haeo.core.schema.elements.battery import BatteryConfigData
 from custom_components.haeo.elements.availability import schema_config_available
 
 
@@ -598,3 +601,250 @@ def test_charge_respects_power_limit_with_efficiency() -> None:
     )
     # Should charge since it's profitable (exact amount depends on efficiency interaction)
     assert battery_charge > 0, "Expected battery to charge since it's profitable"
+
+
+# ---------------------------------------------------------------------------
+# Sensor-output side selection (electrochemical vs bus)
+# ---------------------------------------------------------------------------
+#
+# The battery adapter exposes three power sensors with intentionally
+# different sides of the post-efficiency boundary:
+#
+#   * ``BATTERY_POWER_DISCHARGE`` — electrochemical (battery-cell) draw rate
+#   * ``BATTERY_POWER_CHARGE``    — electrochemical (battery-cell) refill rate
+#   * ``BATTERY_POWER_ACTIVE``    — bus-side net flow, signed
+#                                   (positive = battery exporting to bus)
+#
+# This split matches the OEM hybrid-inverter sensor convention
+# (Sungrow, SigEnergy, Victron) and is the follow-on to upstream PR #297,
+# which placed ``power_limit`` on the post-efficiency side of the chain.
+# Energy/SOC reconciliation needs the electrochemical figures; downstream
+# integrations binding to ``max_active_power`` need the bus figure.
+#
+# The two helpers below build a network with the production adapter's
+# segment order (``efficiency`` then ``power_limit``), so the LP exhibits
+# the post-efficiency cap behaviour the sensors are designed to surface.
+
+
+def _make_battery_config_for_adapter() -> BatteryConfigData:
+    """Return a minimal BatteryConfigData accepted by ``BatteryAdapter.outputs``.
+
+    Only the storage/efficiency/power_limits sections are exercised here;
+    the rest are filled with no-op defaults so the outputs path does not
+    raise on missing keys.
+    """
+    return BatteryConfigData(
+        element_type="battery",
+        name="battery",
+        connection=as_connection_target("bus"),
+        storage={
+            "capacity": np.array([100.0, 100.0]),
+            "initial_charge_percentage": as_constant_value(0.5),
+        },
+        limits={
+            "min_charge_percentage": np.array([0.0]),
+            "max_charge_percentage": np.array([1.0]),
+        },
+        power_limits={
+            "max_power_source_target": np.array([10.0]),
+            "max_power_target_source": np.array([10.0]),
+        },
+        pricing={"salvage_value": as_constant_value(0.0)},
+        efficiency={
+            "efficiency_source_target": np.array([0.9]),
+            "efficiency_target_source": np.array([0.9]),
+        },
+        partitioning={},
+        undercharge={},
+        overcharge={},
+    )
+
+
+def _build_battery_bus_network(
+    *,
+    efficiency: float,
+    discharge_cap_kw: float,
+    charge_cap_kw: float,
+    discharge_price: float,
+    charge_price: float,
+) -> Network:
+    """Build a single-period battery↔bus network using the production segment order.
+
+    Discharge connection: battery → bus, segments = [efficiency, power_limit, pricing]
+    Charge connection:    bus → battery, segments = [efficiency, power_limit, pricing]
+
+    Battery is sized large (100 kWh, 50% SOC) so the binding constraint in
+    the resulting LP is the connection power_limit, not the stored-energy
+    headroom.
+    """
+    network = Network(name="test_efficiency_sensors", periods=np.array([1.0]))
+    network.add(
+        {
+            "element_type": MODEL_ELEMENT_TYPE_BATTERY,
+            "name": "battery",
+            "capacity": np.array([100.0, 100.0]),
+            "initial_charge": 50.0,
+        }
+    )
+    network.add(
+        {"element_type": MODEL_ELEMENT_TYPE_NODE, "name": "bus", "is_source": True, "is_sink": True}
+    )
+    network.add(
+        {
+            "element_type": MODEL_ELEMENT_TYPE_CONNECTION,
+            "name": "battery:discharge",
+            "source": "battery",
+            "target": "bus",
+            "tags": {1},
+            "segments": {
+                "efficiency": {"segment_type": "efficiency", "efficiency": np.array([efficiency])},
+                "power_limit": {"segment_type": "power_limit", "max_power": np.array([discharge_cap_kw])},
+                "pricing": {"segment_type": "pricing", "price": np.array([discharge_price])},
+            },
+        }
+    )
+    network.add(
+        {
+            "element_type": MODEL_ELEMENT_TYPE_CONNECTION,
+            "name": "battery:charge",
+            "source": "bus",
+            "target": "battery",
+            "tags": {1},
+            "segments": {
+                "efficiency": {"segment_type": "efficiency", "efficiency": np.array([efficiency])},
+                "power_limit": {"segment_type": "power_limit", "max_power": np.array([charge_cap_kw])},
+                "pricing": {"segment_type": "pricing", "price": np.array([charge_price])},
+            },
+        }
+    )
+    return network
+
+
+def _collect_model_outputs(network: Network) -> dict[str, dict[str, object]]:
+    """Snapshot per-element outputs after ``network.optimize`` has run."""
+    return {name: dict(element.outputs()) for name, element in network.elements.items()}
+
+
+def test_sensors_report_correct_sides_on_discharge() -> None:
+    """During pure discharge the three sensors should each report their declared side.
+
+    With η=0.9 and a 10 kW post-efficiency cap on the discharge connection:
+
+    * ``BATTERY_POWER_DISCHARGE`` reads the electrochemical-side flow
+      (source-end of the discharge connection, pre-efficiency).
+    * ``BATTERY_POWER_CHARGE`` is zero (no charge happening).
+    * ``BATTERY_POWER_ACTIVE`` reads the bus-side net flow (post-efficiency)
+      and is positive (discharging).
+    """
+    efficiency = 0.9
+    cap_kw = 10.0
+
+    network = _build_battery_bus_network(
+        efficiency=efficiency,
+        discharge_cap_kw=cap_kw,
+        charge_cap_kw=cap_kw,
+        discharge_price=-1.0,  # exporting to bus is profitable
+        charge_price=100.0,    # charging is heavily penalised
+    )
+    network.optimize()
+
+    sensors = battery_adapter.outputs(
+        "battery", _collect_model_outputs(network), config=_make_battery_config_for_adapter()
+    )[BATTERY_DEVICE_BATTERY]
+
+    discharge_conn = network.elements["battery:discharge"]
+    source_end_electro = discharge_conn.extract_values(discharge_conn.total_power_in)[0]
+    target_end_bus = discharge_conn.extract_values(discharge_conn.total_power_out)[0]
+
+    # Electrochemical-side draw matches the connection's source-end (pre-efficiency)
+    assert sensors[BATTERY_POWER_DISCHARGE].values[0] == pytest.approx(source_end_electro)
+    # No charging happening
+    assert sensors[BATTERY_POWER_CHARGE].values[0] == pytest.approx(0.0)
+    # Bus-side active matches the connection's target-end (post-efficiency)
+    assert sensors[BATTERY_POWER_ACTIVE].values[0] == pytest.approx(target_end_bus)
+    # And bus-side is strictly less than electrochemical-side because of η=0.9 loss
+    assert sensors[BATTERY_POWER_ACTIVE].values[0] < sensors[BATTERY_POWER_DISCHARGE].values[0]
+    assert sensors[BATTERY_POWER_ACTIVE].values[0] == pytest.approx(
+        sensors[BATTERY_POWER_DISCHARGE].values[0] * efficiency
+    )
+
+
+def test_sensors_report_correct_sides_on_charge() -> None:
+    """During pure charge the three sensors should each report their declared side.
+
+    With η=0.9 on the charge connection:
+
+    * ``BATTERY_POWER_DISCHARGE`` is zero (no discharge happening).
+    * ``BATTERY_POWER_CHARGE`` reads the electrochemical-side flow
+      (target-end of the charge connection, post-efficiency = battery cells).
+    * ``BATTERY_POWER_ACTIVE`` reads the bus-side net flow (source-end of
+      the charge connection, pre-efficiency) and is negative (charging).
+    """
+    efficiency = 0.9
+    cap_kw = 10.0
+
+    network = _build_battery_bus_network(
+        efficiency=efficiency,
+        discharge_cap_kw=cap_kw,
+        charge_cap_kw=cap_kw,
+        discharge_price=100.0,  # discharging is heavily penalised
+        charge_price=-1.0,      # importing from bus is profitable
+    )
+    network.optimize()
+
+    sensors = battery_adapter.outputs(
+        "battery", _collect_model_outputs(network), config=_make_battery_config_for_adapter()
+    )[BATTERY_DEVICE_BATTERY]
+
+    charge_conn = network.elements["battery:charge"]
+    source_end_bus = charge_conn.extract_values(charge_conn.total_power_in)[0]
+    target_end_electro = charge_conn.extract_values(charge_conn.total_power_out)[0]
+
+    assert sensors[BATTERY_POWER_DISCHARGE].values[0] == pytest.approx(0.0)
+    # Electrochemical-side refill matches the charge connection's target-end (post-efficiency)
+    assert sensors[BATTERY_POWER_CHARGE].values[0] == pytest.approx(target_end_electro)
+    # Active is bus-side and negative (charging) — equals -source-end of charge connection
+    assert sensors[BATTERY_POWER_ACTIVE].values[0] == pytest.approx(-source_end_bus)
+    assert sensors[BATTERY_POWER_ACTIVE].values[0] < 0.0
+    # Bus-side magnitude is strictly greater than electrochemical-side because of η=0.9 loss
+    assert abs(sensors[BATTERY_POWER_ACTIVE].values[0]) > sensors[BATTERY_POWER_CHARGE].values[0]
+    assert abs(sensors[BATTERY_POWER_ACTIVE].values[0]) == pytest.approx(
+        sensors[BATTERY_POWER_CHARGE].values[0] / efficiency
+    )
+
+
+def test_sensor_sides_with_no_efficiency_loss() -> None:
+    """With η=1.0, electrochemical and bus sides coincide.
+
+    All three sensors agree on magnitude regardless of direction.
+    """
+    efficiency = 1.0
+    cap_kw = 10.0
+
+    # Discharge case
+    network = _build_battery_bus_network(
+        efficiency=efficiency,
+        discharge_cap_kw=cap_kw,
+        charge_cap_kw=cap_kw,
+        discharge_price=-1.0,
+        charge_price=100.0,
+    )
+    network.optimize()
+    sensors = battery_adapter.outputs(
+        "battery", _collect_model_outputs(network), config=_make_battery_config_for_adapter()
+    )[BATTERY_DEVICE_BATTERY]
+    assert sensors[BATTERY_POWER_ACTIVE].values[0] == pytest.approx(sensors[BATTERY_POWER_DISCHARGE].values[0])
+
+    # Charge case
+    network = _build_battery_bus_network(
+        efficiency=efficiency,
+        discharge_cap_kw=cap_kw,
+        charge_cap_kw=cap_kw,
+        discharge_price=100.0,
+        charge_price=-1.0,
+    )
+    network.optimize()
+    sensors = battery_adapter.outputs(
+        "battery", _collect_model_outputs(network), config=_make_battery_config_for_adapter()
+    )[BATTERY_DEVICE_BATTERY]
+    assert sensors[BATTERY_POWER_ACTIVE].values[0] == pytest.approx(-sensors[BATTERY_POWER_CHARGE].values[0])
