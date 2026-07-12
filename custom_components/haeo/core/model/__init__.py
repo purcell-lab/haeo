@@ -23,6 +23,8 @@ from .network import LexConstraintCreationError as LexConstraintCreationError
 from .network import LexConstraintError as LexConstraintError
 from .network import LexConstraintStateError as LexConstraintStateError
 from .network import Network as Network
+from .network import OptimizationError as OptimizationError
+from .network import OptimizationInfeasibleError as OptimizationInfeasibleError
 from .output_data import ModelOutputValue, OutputData
 from .output_names import ModelOutputName
 
@@ -47,6 +49,8 @@ __all__ = [
     "NetworkElement",
     "Node",
     "NodeOutputName",
+    "OptimizationError",
+    "OptimizationInfeasibleError",
     "OutputData",
     "OutputType",
 ]

@@ -38,6 +38,29 @@ class LexConstraintStateError(LexConstraintError):
     """The solver may contain an untracked lexicographic row."""
 
 
+class OptimizationError(ValueError):
+    """Base error for a non-optimal HiGHS result."""
+
+    def __init__(
+        self,
+        status: HighsModelStatus,
+        status_text: str,
+        detail: str | None = None,
+    ) -> None:
+        """Initialize an optimization failure with structured solver context."""
+        self.status = status
+        self.status_text = status_text
+        self.detail = detail
+        message = f"Optimization failed with status: {status_text}"
+        if detail:
+            message = f"{message} ({detail})"
+        super().__init__(message)
+
+
+class OptimizationInfeasibleError(OptimizationError):
+    """The current model was reported infeasible."""
+
+
 # Calibration search bounds in log10 space.  The secondary objective can
 # be many orders of magnitude larger than the primary, so we need a wide
 # range.  1e-12 is effectively zero influence; 1e-1 would dominate.
@@ -352,12 +375,24 @@ class Network:
         cost_vectors = _build_cost_vectors((primary, secondary), n_vars)
 
         if isinstance(self.options, BlendedOptions):
-            result = self._solve_blended(h, all_col_indices, cost_vectors, self.options.blend_weight)
+            result = self._solve_blended(
+                h,
+                all_col_indices,
+                cost_vectors,
+                self.options.blend_weight,
+                retry_infeasible=False,
+            )
             self.solves_since_build += 1
             return result
 
         if isinstance(self.options, CalibratedOptions) and self._calibrated_weight is not None:
-            result = self._solve_blended(h, all_col_indices, cost_vectors, self._calibrated_weight)
+            result = self._solve_blended(
+                h,
+                all_col_indices,
+                cost_vectors,
+                self._calibrated_weight,
+                retry_infeasible=True,
+            )
             self.solves_since_build += 1
             return result
 
@@ -414,6 +449,8 @@ class Network:
         all_col_indices: NDArray[np.int32],
         cost_vectors: list[NDArray[np.float64]],
         weight: float,
+        *,
+        retry_infeasible: bool,
     ) -> float:
         """Single-solve weighted sum: primary + weight * secondary."""
         h.clearLinearObjectives()
@@ -421,7 +458,20 @@ class Network:
         blended = cost_vectors[0] + weight * cost_vectors[1]
         _set_cost_vector(h, all_col_indices, blended)
         h.run()
+        cold_retried = False
+        if retry_infeasible and h.getModelStatus() == HighsModelStatus.kInfeasible:
+            _LOGGER.warning(
+                "Reused blended solve reported infeasible after %d prior solve(s); "
+                "clearing solver state and retrying once",
+                self.solves_since_build,
+            )
+            h.clearSolver()
+            self.options.apply(h)
+            h.run()
+            cold_retried = True
         _ensure_optimal(h, phase="blended", network=self)
+        if cold_retried:
+            _LOGGER.warning("Recovered infeasible reused blended solve after clearing solver state")
         return float(cost_vectors[0] @ np.asarray(h.allVariableValues()))
 
     def _calibrate_blend_weight(
@@ -767,25 +817,29 @@ def _ensure_optimal(
 ) -> float:
     """Validate solver status and return the objective value.
 
-    On failure, emit a structured diagnostic naming the conflicting constraints
-    and recording whether the model had already been solved, then raise with a
-    summary appended to the message.
+    Raises a typed failure so callers can distinguish a recoverable infeasible
+    result from any other non-optimal status. On failure, emit a structured
+    diagnostic naming the conflicting constraints and recording whether the
+    model had already been solved, and carry a summary on the exception.
     """
     status = solver.getModelStatus()
-    if status != HighsModelStatus.kOptimal:
-        status_text = solver.modelStatusToString(status)
-        msg = f"Optimization failed with status: {status_text}"
+    if status == HighsModelStatus.kOptimal:
+        return solver.getObjectiveValue()
 
-        # An IIS is only meaningful for an infeasible model.
-        report = diagnostics.collect(
-            solver,
-            phase=phase,
-            status=status_text,
-            network=network,
-            with_conflicts=status == HighsModelStatus.kInfeasible,
-        )
-        _LOGGER.error("%s", report.as_log_message())
+    status_text = solver.modelStatusToString(status)
+    infeasible = status == HighsModelStatus.kInfeasible
 
-        detailed = f"{msg} ({report.as_exception_detail()})"
-        raise ValueError(detailed)
-    return solver.getObjectiveValue()
+    # An IIS is only meaningful for an infeasible model.
+    report = diagnostics.collect(
+        solver,
+        phase=phase,
+        status=status_text,
+        network=network,
+        with_conflicts=infeasible,
+    )
+    _LOGGER.error("%s", report.as_log_message())
+
+    detail = report.as_exception_detail()
+    if infeasible:
+        raise OptimizationInfeasibleError(status, status_text, detail)
+    raise OptimizationError(status, status_text, detail)

@@ -1,6 +1,6 @@
 """Data update coordinator for the Home Assistant Energy Optimizer integration."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import logging
@@ -33,7 +33,14 @@ from custom_components.haeo.core.adapters.registry import ELEMENT_TYPES
 from custom_components.haeo.core.const import CONF_DEBOUNCE_SECONDS, CONF_ELEMENT_TYPE, DEFAULT_DEBOUNCE_SECONDS
 from custom_components.haeo.core.context import OptimizationContext
 from custom_components.haeo.core.data.loader.config_loader import load_element_config_from_values
-from custom_components.haeo.core.model import LexConstraintStateError, ModelOutputName, Network, OutputData, OutputType
+from custom_components.haeo.core.model import (
+    LexConstraintStateError,
+    ModelOutputName,
+    Network,
+    OptimizationInfeasibleError,
+    OutputData,
+    OutputType,
+)
 from custom_components.haeo.core.model.topology import serialize_topology
 from custom_components.haeo.core.schema.elements import ElementConfigData, ElementConfigSchema
 from custom_components.haeo.core.schema.util import extract_unit_parts
@@ -699,6 +706,48 @@ class HaeoDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 updater(element_config)
         self._pending_element_updates.clear()
 
+    async def _optimize_with_recovery(
+        self,
+        loaded_configs: Mapping[str, ElementConfigData],
+        periods_seconds: Sequence[int],
+    ) -> tuple[Network, float]:
+        """Optimize, rebuilding the network once if the live model cannot be trusted.
+
+        Two distinct failures leave the live model unusable while the inputs
+        themselves may be perfectly satisfiable: a persistent infeasible result on
+        a reused model, and a lexicographic row whose rollback could not be
+        verified. Both are recovered the same way, by rebuilding from the current
+        participant values and swapping the live model in only once the rebuilt
+        one has solved.
+        """
+        network = self.network
+        try:
+            return network, await self.hass.async_add_executor_job(network.optimize)
+        except (OptimizationInfeasibleError, LexConstraintStateError) as reused_error:
+            _LOGGER.warning(
+                "Rebuilding the HAEO network after %s on the live model",
+                type(reused_error).__name__,
+            )
+            rebuilt_network, rebuilt_updaters = await network_module.create_network(
+                self.config_entry,
+                periods_seconds=periods_seconds,
+                participants=loaded_configs,
+            )
+
+            try:
+                cost = await self.hass.async_add_executor_job(rebuilt_network.optimize)
+            except (OptimizationInfeasibleError, LexConstraintStateError) as rebuilt_error:
+                raise rebuilt_error from reused_error
+
+            element_types = {name: str(config[CONF_ELEMENT_TYPE]) for name, config in loaded_configs.items()}
+            rebuilt_topology = serialize_topology(rebuilt_network, element_types=element_types)
+
+            self.network = rebuilt_network
+            self._element_updaters = rebuilt_updaters
+            self.topology = rebuilt_topology
+            _LOGGER.warning("Recovered from an unusable reused model by rebuilding the HAEO network")
+            return rebuilt_network, cost
+
     async def _async_update_data(self) -> CoordinatorData:
         """Update data from input entities and run optimization."""
         # Check if optimization is already in progress
@@ -757,24 +806,14 @@ class HaeoDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
             _LOGGER.debug("Running optimization with %d participants", len(loaded_configs))
 
-            # Network should have been created in async_initialize() or set manually in tests.
-            network = self.network
-
             # Apply any pending element updates before optimization
             self._apply_pending_element_updates()
 
-            # Perform the optimization
-            try:
-                cost = await self.hass.async_add_executor_job(network.optimize)
-            except LexConstraintStateError:
-                _LOGGER.exception("Rebuilding network after unsafe lexicographic constraint rollback")
-                network, self._element_updaters = await network_module.create_network(
-                    self.config_entry,
-                    periods_seconds=runtime_data.horizon_manager.periods_seconds,
-                    participants=loaded_configs,
-                )
-                self.network = network
-                cost = await self.hass.async_add_executor_job(network.optimize)
+            # Perform the optimization, replacing a stale live model once if needed.
+            network, cost = await self._optimize_with_recovery(
+                loaded_configs,
+                runtime_data.horizon_manager.periods_seconds,
+            )
 
             end_time = time.time()
             optimization_duration = end_time - start_time
