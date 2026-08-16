@@ -11,6 +11,7 @@ from highspy.highs import highs_cons, highs_linear_expression
 import numpy as np
 from numpy.typing import NDArray
 
+from . import diagnostics
 from .element import Element, NetworkElement
 from .elements import ELEMENTS, ModelElementConfig
 from .elements.battery import Battery, BatteryElementConfig
@@ -144,6 +145,10 @@ class Network:
         self._solver = Highs()
         self._lex_constraint: highs_cons | None = None
         self._calibrated_weight: float | None = None
+
+        # Completed solves on this solver instance. A failure with a non-zero
+        # count points at accumulated model state rather than the inputs.
+        self.solves_since_build = 0
 
         # Redirect HiGHS logging to Python logger at debug level
         self._solver.cbLogging += self._log_callback
@@ -347,12 +352,18 @@ class Network:
         cost_vectors = _build_cost_vectors((primary, secondary), n_vars)
 
         if isinstance(self.options, BlendedOptions):
-            return self._solve_blended(h, all_col_indices, cost_vectors, self.options.blend_weight)
+            result = self._solve_blended(h, all_col_indices, cost_vectors, self.options.blend_weight)
+            self.solves_since_build += 1
+            return result
 
         if isinstance(self.options, CalibratedOptions) and self._calibrated_weight is not None:
-            return self._solve_blended(h, all_col_indices, cost_vectors, self._calibrated_weight)
+            result = self._solve_blended(h, all_col_indices, cost_vectors, self._calibrated_weight)
+            self.solves_since_build += 1
+            return result
 
-        return self._solve_lex(h, all_col_indices, cost_vectors, primary, secondary)
+        result = self._solve_lex(h, all_col_indices, cost_vectors, primary, secondary)
+        self.solves_since_build += 1
+        return result
 
     def _solve_lex(
         self,
@@ -369,13 +380,13 @@ class Network:
         _set_cost_vector(h, all_col_indices, cost_vectors[0])
         self._relax_lex_constraint()
         h.run()
-        primary_value = _ensure_optimal(h)
+        primary_value = _ensure_optimal(h, phase="lex primary", network=self)
 
         # Phase 2: minimize secondary with primary constrained
         self._constrain_objective(primary, primary_value)
         _set_cost_vector(h, all_col_indices, cost_vectors[1])
         h.run()
-        secondary_value = _ensure_optimal(h)
+        secondary_value = _ensure_optimal(h, phase="lex secondary", network=self)
 
         if isinstance(self.options, LexOptions):
             # Phase 3: re-minimize primary with secondary constrained (restore duals)
@@ -383,7 +394,7 @@ class Network:
             self._constrain_objective(secondary, secondary_value + epsilon)
             _set_cost_vector(h, all_col_indices, cost_vectors[0])
             h.run()
-            _ensure_optimal(h)
+            _ensure_optimal(h, phase="lex restore", network=self)
 
         # Calibrate blend weight for future calls
         if isinstance(self.options, CalibratedOptions):
@@ -410,7 +421,7 @@ class Network:
         blended = cost_vectors[0] + weight * cost_vectors[1]
         _set_cost_vector(h, all_col_indices, blended)
         h.run()
-        _ensure_optimal(h)
+        _ensure_optimal(h, phase="blended", network=self)
         return float(cost_vectors[0] @ np.asarray(h.allVariableValues()))
 
     def _calibrate_blend_weight(
@@ -497,7 +508,7 @@ class Network:
         blended = cost_vectors[0] + weight * cost_vectors[1]
         _set_cost_vector(h, all_col_indices, blended)
         h.run()
-        _ensure_optimal(h)
+        _ensure_optimal(h, phase="blend calibration", network=self)
 
         return weight
 
@@ -533,6 +544,18 @@ class Network:
             return solver.addConstr(expr)
         except Exception as err:
             added_rows = solver.numConstrs - initial_rows
+
+            # The coefficient magnitudes are the most common cause of a rejected
+            # row, so record them before unwinding.
+            stats = diagnostics.coefficient_stats(expr)
+            _LOGGER.exception(
+                "HiGHS rejected the lexicographic objective row after %d prior solve(s): %s; rows %d -> %d, bounds=%s",
+                self.solves_since_build,
+                stats if stats is not None else "coefficients unavailable",
+                initial_rows,
+                solver.numConstrs,
+                expr.bounds,
+            )
 
             if added_rows > 0:
                 indices = np.arange(initial_rows, solver.numConstrs, dtype=np.int32)
@@ -736,10 +759,33 @@ def _set_cost_vector(
     solver.changeObjectiveOffset(0.0)
 
 
-def _ensure_optimal(solver: Highs) -> float:
-    """Validate solver status and return the objective value."""
+def _ensure_optimal(
+    solver: Highs,
+    *,
+    phase: str = "solve",
+    network: Network | None = None,
+) -> float:
+    """Validate solver status and return the objective value.
+
+    On failure, emit a structured diagnostic naming the conflicting constraints
+    and recording whether the model had already been solved, then raise with a
+    summary appended to the message.
+    """
     status = solver.getModelStatus()
     if status != HighsModelStatus.kOptimal:
-        msg = f"Optimization failed with status: {solver.modelStatusToString(status)}"
-        raise ValueError(msg)
+        status_text = solver.modelStatusToString(status)
+        msg = f"Optimization failed with status: {status_text}"
+
+        # An IIS is only meaningful for an infeasible model.
+        report = diagnostics.collect(
+            solver,
+            phase=phase,
+            status=status_text,
+            network=network,
+            with_conflicts=status == HighsModelStatus.kInfeasible,
+        )
+        _LOGGER.error("%s", report.as_log_message())
+
+        detailed = f"{msg} ({report.as_exception_detail()})"
+        raise ValueError(detailed)
     return solver.getObjectiveValue()

@@ -13,6 +13,10 @@ from . import ForecastSeries
 # Need at least 2 boundaries (start and end) to define one interval
 MIN_BOUNDARIES = 2
 
+# Magnitudes below this are float noise rather than real power. Left in place they
+# reach HiGHS as sub-tolerance matrix coefficients (issue #501).
+NOISE_FLOOR = 1e-9
+
 
 def _build_extended_block(
     forecast_series: ForecastSeries,
@@ -81,7 +85,7 @@ def fuse_to_boundaries(
     # rejects |a_ij| < small_matrix_value (1e-9) with a warning that highspy
     # escalates to "Error adding constraint" - orphaning the lex row and
     # wedging every subsequent solve as Infeasible.
-    values[np.abs(values) < 1e-9] = 0.0
+    values[np.abs(values) < NOISE_FLOOR] = 0.0
 
     # Replace position 0 with present_value if provided
     result = [float(v) for v in values]
@@ -149,7 +153,7 @@ def fuse_to_intervals(
         area = np.trapezoid(values, times)
         interval_value = float(area / interval_duration)
         # Snap float-noise magnitudes to zero (see fuse_to_boundaries, issue #501).
-        if abs(interval_value) < 1e-9:
+        if abs(interval_value) < NOISE_FLOOR:
             interval_value = 0.0
         result.append(interval_value)
 

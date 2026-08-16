@@ -281,9 +281,7 @@ def test_fuse_to_boundaries_snaps_float_noise_to_zero() -> None:
 
     assert result[1] == 0.0, f"expected exact 0.0, got {result[1]!r}"
     for i, v in enumerate(result):
-        assert v == 0.0 or abs(v) >= 1e-9, (
-            f"position {i}: value {v!r} is a sub-1e-9 nonzero (issue #501 signature)"
-        )
+        assert v == 0.0 or abs(v) >= 1e-9, f"position {i}: value {v!r} is a sub-1e-9 nonzero (issue #501 signature)"
 
 
 def test_fuse_to_intervals_snaps_float_noise_to_zero() -> None:
@@ -301,6 +299,4 @@ def test_fuse_to_intervals_snaps_float_noise_to_zero() -> None:
     result = fuse_to_intervals(None, forecast_series, horizon_times)
 
     for i, v in enumerate(result):
-        assert v == 0.0 or abs(v) >= 1e-9, (
-            f"interval {i}: value {v!r} is a sub-1e-9 nonzero (issue #501 signature)"
-        )
+        assert v == 0.0 or abs(v) >= 1e-9, f"interval {i}: value {v!r} is a sub-1e-9 nonzero (issue #501 signature)"
