@@ -644,6 +644,29 @@ def test_lex_mode_warm_resolve_with_duplicate_coefficients() -> None:
     assert r1 == pytest.approx(r2)
 
 
+def test_lex_mode_phase2_primary_bound_has_slack(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 2 bounds the primary objective with a small slack, like phase 3.
+
+    Regression: phase 2 constrained the primary objective to exactly the phase 1
+    optimum.  HiGHS reports that optimum only to within its tolerances, so on real
+    networks (time-varying policy prices with an EV on the DC charger) phase 2
+    came back infeasible and the whole solve failed.
+    """
+    network = _build_priced_network(LexOptions())
+    bounds: list[float] = []
+    original = Network._constrain_objective
+
+    def spy(self: Network, objective: object, optimal_value: float) -> None:
+        bounds.append(optimal_value)
+        original(self, objective, optimal_value)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Network, "_constrain_objective", spy)
+    primary_value = network.optimize()
+
+    assert bounds, "phase 2 should constrain the primary objective"
+    assert bounds[0] - primary_value == pytest.approx(max(1e-6, abs(primary_value) * 1e-6))
+
+
 def test_update_constraint_sums_duplicate_coefficients() -> None:
     """_update_constraint must aggregate duplicate var idxs in both sides."""
     network = Network(name="test", periods=np.array([1.0]))
