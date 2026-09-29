@@ -18,6 +18,12 @@ around the owner being able to plug in or move a car at short notice:
 The windows roll with `now()`. A plan that relies on a swap or a return keeps moving out
 until the car is actually moved, and HAEO re-plans within 5 minutes of a plug change.
 
+Planned EV actions inside these windows are real plan actions, not artefacts. HAEO assumes
+the car returns (or is swapped) as the window says, and the plan will carry them out when
+it does. If it doesn't, the plan reschedules to the next time it expects the car. Never
+describe or discount a planned EV charge, discharge or export as "won't happen because the
+car is away".
+
 Implemented in `packages/haeo.yaml` (Home Assistant) by these sensors:
 
 - `sensor.ev1_max_discharge_power_forecast` / `sensor.ev2_max_discharge_power_forecast`
@@ -71,3 +77,10 @@ Behaviour is changed by changing HAEO's plan: its policy rules, element configur
 the input sensors that feed it. The Sigen battery-management automation and the AC charging
 follower only carry out the plan. Do not add logic, thresholds or smoothing to them to get
 a different behaviour; if the plan is wrong, fix the plan.
+
+Prefer prices on devices and markets (a device's own cost, discharge costs, import and
+export prices) over rules that hard-code an energy path (source → target). The switchboard
+shadow price must reflect what energy is really worth there, for example the sell price when
+export is possible, so price gates such as the pool heater's 5¢ shedding cost work as set.
+A path rule that bends that price (for example an extra cost on Battery → Grid or EVs → Grid)
+breaks those gates (29 Sep).
