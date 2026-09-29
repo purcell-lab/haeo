@@ -50,3 +50,23 @@ So a policy change must:
    A single rule targeting several cars can still collapse onto the source's output.
 5. **Report the side effects.** Report today's solar split (EVs, battery, export), grid
    import, and end-of-day SoC for the battery and each EV, against the baseline.
+
+## Rule 2: EVs charge early, the battery charges late (29 Sep 2026)
+
+- **EV priority, early:** a plugged-in EV takes charge as early in the day as possible.
+- **Battery priority, late:** the home battery charges late in the day.
+- **Solar when possible, grid when needed:** solar is always used before the grid, and the
+  grid only fills what solar cannot (for example the battery reserve or a "full by 3pm"
+  target).
+
+Express this with time-of-day policy prices (for example an EV charge incentive that falls
+through the day and a small solar-to-battery cost that falls to zero by mid-afternoon), kept
+small against grid prices so solar always beats grid, and below the EV discharge cost so a
+car is never charged and discharged together for the incentive (Rule 1 checks).
+
+## Rule 3: the HAEO plan is the coordinator (29 Sep 2026)
+
+Behaviour is changed by changing HAEO's plan: its policy rules, element configuration and
+the input sensors that feed it. The Sigen battery-management automation and the AC charging
+follower only carry out the plan. Do not add logic, thresholds or smoothing to them to get
+a different behaviour; if the plan is wrong, fix the plan.
