@@ -50,7 +50,13 @@ So a policy change must:
 2. **Be dry-run first.** Replay a fresh diagnostic offline (`tools/diag.py`), with the
    policy rules compiled (`compile_policies`), for the change and for the live baseline.
 3. **Pass the overlap check.** No EV may be planned to charge and discharge in the same
-   period today, and any overlap later in the horizon must be explained.
+   period today, and any overlap later in the horizon must be explained. The check is per
+   car. Across the two cars (29 Sep, owner): EV1 and EV2 may charge at the same time (one
+   on AC, one on DC). Both discharging in the same period is physically impossible (one DC
+   charger), but HAEO is a linear program and cannot exclude it; the DCEV Inverter only
+   caps their sum at 25 kW. The owner accepts this in the plan and handles it in
+   execution, so it is not a failed check and needs no policy change. A dry run on 29 Sep
+   showed per-car discharge-cost tie-breaks (0.1-0.5 c) do not reduce it.
 4. **Check where each rule is priced.** List each rule's priced connections. A rule meant
    for a car's charging must land on that car's charge link (`EVn:charge`), not on a
    source's output. With the EV Port nodes (29 Sep), per-car and per-source rules do.
