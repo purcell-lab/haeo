@@ -107,7 +107,7 @@ class LexOptions(SimplexTuning):
     """Three-phase lexicographic optimization with clean shadow prices.
 
     Phase 1: minimize primary.
-    Phase 2: minimize secondary with primary constrained (epsilon slack).
+    Phase 2: minimize secondary with primary constrained.
     Phase 3: re-minimize primary with secondary constrained (epsilon slack).
     """
 
@@ -417,12 +417,8 @@ class Network:
         h.run()
         primary_value = _ensure_optimal(h, phase="lex primary", network=self)
 
-        # Phase 2: minimize secondary with primary constrained.  The bound gets the
-        # same relative slack as phase 3: HiGHS reports primary_value only to within
-        # its feasibility tolerances, so an exact bound can leave phase 2 infeasible
-        # even though phase 1's own solution satisfies it.
-        primary_slack = max(1e-6, abs(primary_value) * 1e-6)
-        self._constrain_objective(primary, primary_value + primary_slack)
+        # Phase 2: minimize secondary with primary constrained
+        self._constrain_objective(primary, primary_value)
         _set_cost_vector(h, all_col_indices, cost_vectors[1])
         h.run()
         secondary_value = _ensure_optimal(h, phase="lex secondary", network=self)
