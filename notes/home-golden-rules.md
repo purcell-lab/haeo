@@ -12,7 +12,8 @@ around the owner being able to plug in or move a car at short notice:
 |---|---|
 | **Not on the DC charger** (unplugged or away) | **Back within 1 hour**: no DC charge or discharge for the next hour, then 25 kW DC charge and discharge for the rest of the horizon. |
 | **On the AC charger** | **Swap within 2 hours**: AC charging up to 11 kW across the horizon, no DC charging, no DC discharge for the next 2 hours, then 25 kW DC discharge for the rest of the horizon. |
-| **On the DC charger, session running** | Real availability from the session. |
+| **On the DC charger, session off** (charger "Occupied", charge switch off) | Same as not on the DC charger: **back within 1 hour** (29 Sep). |
+| **On the DC charger, session running** (charge switch on, or charger Charging/Discharging) | Real availability from the session. |
 
 The windows roll with `now()`. A plan that relies on a swap or a return keeps moving out
 until the car is actually moved, and HAEO re-plans within 5 minutes of a plug change.
