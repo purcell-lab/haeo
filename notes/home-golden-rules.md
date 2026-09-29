@@ -10,7 +10,7 @@ around the owner being able to plug in or move a car at short notice:
 
 | EV state | Planned availability |
 |---|---|
-| **Not on the DC charger** (unplugged or away) | **Back within 1 hour**: no DC charge or discharge for the next hour, then 25 kW DC charge and discharge for the rest of the horizon. |
+| **Not on the DC charger** (unplugged or away) | **Back within 1 hour**: no charge or discharge for the next hour, then 25 kW DC charge and discharge and 11 kW AC charge for the rest of the horizon (AC added 29 Sep, so both cars can charge together, one on DC and one on AC, when power is cheap). |
 | **On the AC charger** | **Swap within 2 hours**: AC charging up to 11 kW across the horizon, no DC charging, no DC discharge for the next 2 hours, then 25 kW DC discharge for the rest of the horizon. |
 | **On the DC charger, session off** (charger "Occupied", charge switch off) | Same as not on the DC charger: **back within 1 hour** (29 Sep). |
 | **On the DC charger, session running** (charge switch on, or charger Charging/Discharging) | Real availability from the session. |
@@ -28,7 +28,9 @@ Implemented in `packages/haeo.yaml` (Home Assistant) by these sensors:
 
 - `sensor.ev1_max_discharge_power_forecast` / `sensor.ev2_max_discharge_power_forecast`
 - `sensor.ev1_max_charge_power_forecast` / `sensor.ev2_max_charge_power_forecast` (DC path)
-- `sensor.ev1_ac_charge_power_forecast` / `sensor.ev2_ac_charge_power_forecast` (AC path)
+- `sensor.ev1_ac_charge_power_forecast` / `sensor.ev2_ac_charge_power_forecast` (AC path; the
+  state is the present availability, 11 only while on the AC charger, and gates the AC
+  follower; the forecast carries the window)
 - `sensor.ev1_max_charge_power_total_forecast` / `sensor.ev2_max_charge_power_total_forecast`
   (each car's own charge limit, the larger of the DC and AC paths)
 
@@ -72,10 +74,13 @@ So a policy change must:
   grid only fills what solar cannot (for example the battery reserve or a "full by 3pm"
   target).
 
-Express this with time-of-day policy prices (for example an EV charge incentive that falls
-through the day and a small solar-to-battery cost that falls to zero by mid-afternoon), kept
-small against grid prices so solar always beats grid, and below the EV discharge cost so a
-car is never charged and discharged together for the incentive (Rule 1 checks).
+Express this with prices on the devices, not path rules (Rule 3). Since 29 Sep the only
+one is the EV charge price (`sensor.haeo_ev_charge_price` on the "EVn charge cost" rules,
+* -> EVn): -0.02 $/kWh at 06:00 falling linearly to -0.01 at 16:00, 0 otherwise. The tilt
+makes the EVs charge at the start of any equally cheap window at full rate, both cars
+together (one on DC, one on AC) up to their limits, and the battery fills after them.
+It stays below the 0.03 EV discharge cost so a car is never charged and discharged
+together for the incentive (Rule 1 checks).
 
 ## Rule 3: the HAEO plan is the coordinator (29 Sep 2026)
 
