@@ -95,3 +95,55 @@ shadow price must reflect what energy is really worth there, for example the sel
 export is possible, so price gates such as the pool heater's 5¢ shedding cost work as set.
 A path rule that bends that price (for example an extra cost on Battery → Grid or EVs → Grid)
 breaks those gates (29 Sep).
+
+## Standard scenario suite (30 Sep 2026)
+
+Every policy, price or input-sensor change is dry-run against these scenarios before it goes
+live, alongside the Rule 1 checks. Prices are the signal, not clock windows: each event is
+injected as an extra price input on the Grid (HAEO sums its price inputs), so the event price
+replaces the forecast inside the event window. The runner is `notes/dry-run/scenarios.py`;
+run it on a fresh diagnostic ("data" object), with Amber's `detailedForecast` for the
+renewables proxy.
+
+| Scenario | Event | Buy | Sell | Renewables | Expected outcome |
+|---|---|---|---|---|---|
+| **S0 Today** | none (today's forecast) | forecast | forecast | forecast | Import only when the buy price is low; export stored energy only when the sell price beats keeping it; storage full before the evening. |
+| **S1 MSL** (minimum system load) | 11:00-15:00 | -28 c | -30 c | 98% | Fill all storage (EVs to their limits, battery to 100%), pool heater and miner on, no export, curtail only what cannot be stored. Emptying storage at about 0 c just before the event, to make room for paid energy, is allowed. |
+| **S2 LOR, morning** (lack of reserve) | tomorrow 06:00-06:30 | 230 c | 200 c | 30% | No import. Export everything above the EV and battery floors at the inverter limit, inside the event. |
+| **S3 LOR, evening** | 18:00-21:00 | 135 c | 100 c | 12% | No import. Export EVs and battery at the limit for the whole event, keeping only what the night needs. |
+| **S4 5-minute spike** | 13:00-13:05 | 1550 c | 1500 c | 80% | No import. Export at the full limit for the 5 minutes, then refill in the cheap window. |
+
+Each scenario is run with the live rules and any proposed rules, on two time grids:
+HAEO's own period tiers ("tier": 1, 5, 30 then 60-minute periods), and 5-minute periods for
+24 h ("fine": what the plan does once the event is inside HAEO's short-period range).
+Report for each: energy in the event window (import, export, battery and EV charge and
+discharge, pool, miner, curtailment, SoC at the end of the event), 24 h net grid cash and net
+CO2e (0.8 kg/kWh x (1 - renewables)), import and export by price band, and Rule 1 overlaps.
+
+### Results, 30 Sep 2026 (diagnostic 09:47, both EVs off the chargers, live rules)
+
+| Scenario | In the event (fine grid) | 24 h net grid cash | Pass |
+|---|---|---|---|
+| S0 | 16:00-21:00: export 11 kWh at 5-15 c, no import | $5.57 | Yes |
+| S1 MSL | import 141 kWh at -28 c, storage full, pool 22 kWh, miner 3 kWh, no export, 0.5 kWh curtailed | $47.71 | Yes, but EV1 planned to 96.9% (see below) |
+| S2 LOR 06:00 | export 15 kWh in 30 min (30 kW, the inverter limit), EVs at their 20% floor | $34.62 | Yes |
+| S3 LOR 18:00 | export 86 kWh at 100 c, EVs to about 20%, battery kept at 47% for the night | $81.71 | Yes |
+| S4 spike | export 3.4 kWh in 5 min (about 41 kW) | $56.04 | Yes |
+
+All imports in every scenario were at buy prices under 5 c (except 1.9 kWh at 5-25 c in S3).
+No Rule 1 overlaps. Findings:
+
+- **Event resolution.** In HAEO's tiers a 5-minute spike 3 h ahead sits in a 30-minute period
+  and a 30-minute event tomorrow in a 60-minute period, so the plan spreads the export over
+  the whole period (S2 tier drained the battery to 0% by 07:00; fine kept 34%). The plan
+  concentrates the export into the event once it is inside the 5-minute tier (the last ~35
+  minutes), so execution follows the fine result.
+- **Export ceiling.** The battery, the DC charger and DC-coupled solar share the 30 kW
+  inverter, which caps event exports at about 30-41 kW.
+- **EV1 overcharge.** EV1 may be planned above its 90% charge limit up to 100% at a cost of
+  0.20 $/kWh. At MSL prices (-28 c) that pays, so the plan fills EV1 to 96.9%, which the
+  car will not accept. The overcharge cost needs to be above the most negative expected buy
+  price.
+- **Carbon price (v3 proposal, $35/t, import cost and export credit).** Across S0-S4 it
+  lowers 24 h CO2e by 1.5-2.2 kg and changes cash by -$0.31 to +$0.51, but adds 5-9 kWh of
+  morning solar export at 4.9 c (the credit tips it past the pool heater's 5 c gate).
