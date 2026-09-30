@@ -10,8 +10,8 @@ around the owner being able to plug in or move a car at short notice:
 
 | EV state | Planned availability |
 |---|---|
-| **Not on the DC charger** (unplugged or away) | **Back within 1 hour**: no charge or discharge for the next hour, then 25 kW DC charge and discharge and 11 kW AC charge for the rest of the horizon (AC added 29 Sep, so both cars can charge together, one on DC and one on AC, when power is cheap). |
-| **On the AC charger** | **Swap within 2 hours**: AC charging up to 11 kW across the horizon, no DC charging, no DC discharge for the next 2 hours, then 25 kW DC discharge for the rest of the horizon. |
+| **Not on the DC charger** (unplugged or away) | **Back within 1 hour**: no charge or discharge for the next hour, then 25 kW DC charge and discharge and 11.52 kW (16 A) AC charge for the rest of the horizon (AC added 29 Sep, so both cars can charge together, one on DC and one on AC, when power is cheap). |
+| **On the AC charger** | **Swap within 2 hours**: AC charging up to 11.52 kW (16 A) across the horizon, no DC charging, no DC discharge for the next 2 hours, then 25 kW DC discharge for the rest of the horizon. |
 | **On the DC charger, session off** (charger "Occupied", charge switch off) | Same as not on the DC charger: **back within 1 hour** (29 Sep). |
 | **On the DC charger, session running** (charge switch on, or charger Charging/Discharging) | Real availability from the session. |
 
@@ -29,12 +29,17 @@ Implemented in `packages/haeo.yaml` (Home Assistant) by these sensors:
 - `sensor.ev1_max_discharge_power_forecast` / `sensor.ev2_max_discharge_power_forecast`
 - `sensor.ev1_max_charge_power_forecast` / `sensor.ev2_max_charge_power_forecast` (DC path)
 - `sensor.ev1_ac_charge_power_forecast` / `sensor.ev2_ac_charge_power_forecast` (AC path; the
-  state is the present availability, 11 only while on the AC charger, and gates the AC
+  state is the present availability, 11.52 only while on the AC charger, and gates the AC
   follower; the forecast carries the window)
 - `sensor.ev1_max_charge_power_total_forecast` / `sensor.ev2_max_charge_power_total_forecast`
   (each car's own charge limit, the larger of the DC and AC paths)
 
 The package carries the same rule as a header comment above these sensors.
+
+AC charger limit (30 Sep): 16 A three-phase, 11.52 kW drawn from the switchboard. HAEO applies
+the "ACEV Charger" element's power limit on the car side of its 96.7% efficiency, so the
+element is set to 11.14 kW (= 11.52 x 0.967) and the AC forecast sensors read 11.52 kW. The AC
+follower converts planned power to amps with the measured 0.715 kW per amp and caps at 16 A.
 
 ### What this means for every policy change
 
