@@ -2,7 +2,8 @@
 
 The golden rules now live with the Home Assistant configuration they govern:
 
-- **Rules (v4, approved 2026-09-30):** `purcell-lab/ha-config`, `docs/golden-rules.md`
+- **Rules (v4, approved 2026-09-30):** `purcell-lab/ha-config`, project skill `haeo-golden-rules`
+  (`.claude/skills/haeo-golden-rules/SKILL.md`, full text in `golden-rules.md` beside it)
 - **Dry-run tools (replay and scenario suite):** `purcell-lab/ha-config`, `scripts/haeo_dry_run/`
 
 They are run from the root of a checkout of this repo, since they import `tools.diag` and
