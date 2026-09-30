@@ -144,6 +144,8 @@ No Rule 1 overlaps. Findings:
   0.20 $/kWh. At MSL prices (-28 c) that pays, so the plan fills EV1 to 96.9%, which the
   car will not accept. The overcharge cost needs to be above the most negative expected buy
   price.
-- **Carbon price (v3 proposal, $35/t, import cost and export credit).** Across S0-S4 it
-  lowers 24 h CO2e by 1.5-2.2 kg and changes cash by -$0.31 to +$0.51, but adds 5-9 kWh of
+- **Carbon price (v3 proposal, $35/t, import cost and export credit).** On the fine grid it
+  lowers 24 h CO2e by 1.4-2.1 kg and raises cash by $0.42-0.50 in every scenario. On HAEO's
+  tiers the result is mixed (CO2e +3.1 to -1.6 kg, cash -$0.31 to +$0.39): with 30 and 60-minute
+  periods it holds more battery energy through the evening. In both it adds 5-9 kWh of
   morning solar export at 4.9 c (the credit tips it past the pool heater's 5 c gate).
