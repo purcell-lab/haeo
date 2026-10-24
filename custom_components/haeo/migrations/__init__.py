@@ -26,6 +26,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version != 1:
         return True
 
+    # Fork patch: entries a pre-release build saved at 1.4 get the v1.4 steps it lacked
+    if not await v1_4.async_repair_entry(hass, entry):
+        return False
+
     for target_minor, handler in MIGRATIONS:
         if entry.minor_version < target_minor and not await handler(hass, entry):
             return False

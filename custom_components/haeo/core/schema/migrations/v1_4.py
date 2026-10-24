@@ -7,7 +7,7 @@ and battery undercharge and overcharge partitions become buffers.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 import logging
@@ -406,6 +406,26 @@ def migrate_participants(
     return ParticipantMigration(ordered, created_from, junctions)
 
 
+# Fork patch (purcell-lab/haeo): builds of main before 0.5.0rc1 saved entries at
+# v1.4 after splitting connections only. The horizon choice and the battery
+# buffers came to v1.4 later, so an entry or export at v1.4 or later without
+# them skipped those steps and is migrated as if it predated v1.4.
+
+
+def predates_v1_4(hub: Mapping[str, object], participants: Iterable[Mapping[str, object]]) -> bool:
+    """Return True when a hub config and its element configs have not had the v1.4 migration.
+
+    Every hub the v1.4 migration or the config flow saved has a horizon choice,
+    and no battery it saved has partitions.
+    """
+    if CONF_HORIZON not in section_dict(hub, HUB_SECTION_COMMON):
+        return True
+    return any(
+        config.get(CONF_ELEMENT_TYPE) == battery.ELEMENT_TYPE and not _PARTITION_SECTIONS.isdisjoint(config)
+        for config in participants
+    )
+
+
 __all__ = [
     "LEGACY_CHARGE_LIMIT_COST",
     "MINOR_VERSION",
@@ -423,4 +443,5 @@ __all__ = [
     "migrate_participants",
     "node_becomes_junction",
     "node_is_junction",
+    "predates_v1_4",
 ]

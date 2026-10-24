@@ -32,6 +32,7 @@ from custom_components.haeo.core.schema.migrations.v1_4 import (
     migrate_participants,
     node_becomes_junction,
     node_is_junction,
+    predates_v1_4,
 )
 from custom_components.haeo.core.schema.sections import (
     CONF_EFFICIENCY_SOURCE_TARGET,
@@ -396,3 +397,36 @@ def test_migrate_participants_replaces_nodes_by_mode(advanced_mode: bool, juncti
 
     assert migration.junctions == junctions
     assert migration.created_from == {}
+
+
+_CURRENT_HUB = {HUB_SECTION_COMMON: {CONF_NAME: "Home", CONF_HORIZON: as_horizon_preset_value(HORIZON_PRESET_5_DAYS)}}
+_CURRENT_BATTERY = {CONF_ELEMENT_TYPE: battery.ELEMENT_TYPE, CONF_NAME: "Battery", battery.SECTION_STORAGE: {}}
+
+
+@pytest.mark.parametrize(
+    ("hub", "participants", "expected"),
+    [
+        pytest.param(_CURRENT_HUB, [_CURRENT_BATTERY], False, id="current"),
+        pytest.param(
+            {HUB_SECTION_COMMON: {CONF_NAME: "Home", CONF_HORIZON_PRESET: HORIZON_PRESET_5_DAYS}},
+            [_CURRENT_BATTERY],
+            True,
+            id="horizon_preset",
+        ),
+        pytest.param(
+            _CURRENT_HUB,
+            [{**_CURRENT_BATTERY, "partitioning": {"configure_partitions": False}}],
+            True,
+            id="battery_partitions",
+        ),
+        pytest.param(
+            _CURRENT_HUB,
+            [{CONF_ELEMENT_TYPE: node.ELEMENT_TYPE, CONF_NAME: "Switchboard"}],
+            False,
+            id="node_alone_is_not_a_marker",
+        ),
+    ],
+)
+def test_predates_v1_4(hub: Mapping[str, object], participants: list[Mapping[str, object]], *, expected: bool) -> None:
+    """A hub without a horizon choice, or a battery with partitions, has not had the v1.4 migration."""
+    assert predates_v1_4(hub, participants) is expected

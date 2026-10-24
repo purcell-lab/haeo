@@ -38,6 +38,7 @@ from custom_components.haeo.core.schema.migrations.v1_4 import (
     migrate_hub_horizon,
     migrate_participants,
     node_is_junction,
+    predates_v1_4,
 )
 from custom_components.haeo.repairs import create_horizon_tiers_replaced_issue, create_node_replaced_by_junction_issue
 from custom_components.haeo.unique_id import element_output_unique_id, element_unique_id, parse_element_unique_id
@@ -249,18 +250,8 @@ def _link_entities_to_subentries(
                 registry.async_remove(entity_entry.entity_id)
 
 
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate existing config entries to version 1.4."""
-    if entry.minor_version >= MINOR_VERSION:
-        return True
-
-    _LOGGER.info(
-        "Migrating %s entry %s to version 1.%s",
-        DOMAIN,
-        entry.entry_id,
-        MINOR_VERSION,
-    )
-
+def _apply_migrations(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, object]:
+    """Apply the v1.4 element, entity and horizon migrations, and return the migrated hub config."""
     advanced_mode = entry.data.get(HUB_SECTION_ADVANCED, {}).get(CONF_ADVANCED_MODE, False)
     junctions = _migrate_elements(hass, entry, advanced_mode=advanced_mode)
 
@@ -278,6 +269,63 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             days,
         )
         create_horizon_tiers_replaced_issue(hass, entry.entry_id, entry.title, days)
-    hass.config_entries.async_update_entry(entry, data=horizon.hub, minor_version=MINOR_VERSION)
+    return horizon.hub
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate existing config entries to version 1.4."""
+    if entry.minor_version >= MINOR_VERSION:
+        return True
+
+    _LOGGER.info(
+        "Migrating %s entry %s to version 1.%s",
+        DOMAIN,
+        entry.entry_id,
+        MINOR_VERSION,
+    )
+
+    hub = _apply_migrations(hass, entry)
+    hass.config_entries.async_update_entry(entry, data=hub, minor_version=MINOR_VERSION)
     _LOGGER.info("Migration complete for %s entry %s", DOMAIN, entry.entry_id)
+    return True
+
+
+# Fork patch (purcell-lab/haeo): builds of main before 0.5.0rc1 shipped a v1.4
+# migration that only split bidirectional connections, and saved their entries
+# at 1.4. The junction (#513), horizon (#461), buffer (#536) and entity link
+# (#569) steps were added to v1.4 afterwards, so those entries skip them and
+# fail to set up with "Battery is not a valid element config". This applies the
+# v1.4 steps to an entry at 1.4 or later that never had them, as it would to an
+# entry from before 1.4. An entry the released migration or the config flow
+# saved is never touched.
+
+
+def needs_repair(entry: ConfigEntry) -> bool:
+    """Return True when an entry at 1.4 or later never had the v1.4 steps."""
+    if entry.minor_version < MINOR_VERSION:
+        return False
+    configs = (
+        {CONF_ELEMENT_TYPE: subentry.subentry_type, **subentry.data}
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type in ELEMENT_TYPES
+    )
+    return predates_v1_4(entry.data, configs)
+
+
+async def async_repair_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Apply the v1.4 steps an entry saved at 1.4 by a pre-release build skipped."""
+    if not needs_repair(entry):
+        return True
+
+    _LOGGER.warning(
+        "%s entry %s is at version 1.%s but has a pre-1.%s config; applying the v1.%s migration again",
+        DOMAIN,
+        entry.entry_id,
+        entry.minor_version,
+        MINOR_VERSION,
+        MINOR_VERSION,
+    )
+    hub = _apply_migrations(hass, entry)
+    hass.config_entries.async_update_entry(entry, data=hub)
+    _LOGGER.info("Repair complete for %s entry %s", DOMAIN, entry.entry_id)
     return True
