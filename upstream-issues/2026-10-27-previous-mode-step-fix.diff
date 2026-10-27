@@ -1,0 +1,30 @@
+diff --git a/custom_components/haeo/core/data/loader/extractors/utils/step_points.py b/custom_components/haeo/core/data/loader/extractors/utils/step_points.py
+index 3a4b5b9..32f46b9 100644
+--- a/custom_components/haeo/core/data/loader/extractors/utils/step_points.py
++++ b/custom_components/haeo/core/data/loader/extractors/utils/step_points.py
+@@ -1,6 +1,7 @@
+ """Points for forecast values that describe a period."""
+ 
+ from collections.abc import Iterable, Sequence
++from operator import itemgetter
+ 
+ 
+ def step_points(blocks: Iterable[tuple[int, int, float]]) -> list[tuple[int, float]]:
+@@ -11,7 +12,7 @@ def step_points(blocks: Iterable[tuple[int, int, float]]) -> list[tuple[int, flo
+     Adjacent blocks share a boundary timestamp, which ``extract()`` separates so
+     the series steps there instead of ramping.
+     """
+-    return [point for start, end, value in sorted(blocks) for point in ((start, value), (end, value))]
++    return [point for start, end, value in sorted(blocks, key=itemgetter(0, 1)) for point in ((start, value), (end, value))]
+ 
+ 
+ def hold_until_next(points: Sequence[tuple[int, float]]) -> list[tuple[int, int, float]]:
+@@ -20,7 +21,7 @@ def hold_until_next(points: Sequence[tuple[int, float]]) -> list[tuple[int, int,
+     The last point holds for as long as the step before it, so at least two
+     points are needed.
+     """
+-    ordered = sorted(points)
++    ordered = sorted(points, key=itemgetter(0))
+     ends = [end for end, _ in ordered[1:]]
+     ends.append(2 * ordered[-1][0] - ordered[-2][0])
+     return [(start, end, value) for (start, value), end in zip(ordered, ends, strict=True)]
